@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat Test</title>
+</head>
+<body>
+
+<h2>Real-Time Chat</h2>
+
+<input id="room" placeholder="Enter Room ID" />
+<button onclick="joinRoom()">Join Room</button>
+
+<br><br>
+
+<input id="message" placeholder="Enter Message" />
+<button onclick="sendMessage()">Send</button>
+
+<ul id="messages"></ul>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+  const socket = io("http://localhost:5000");
+
+  function joinRoom() {
+    const room = document.getElementById("room").value;
+    socket.emit("joinRoom", room);
+    alert("Joined " + room);
+  }
+
+  function sendMessage() {
+    const room = document.getElementById("room").value;
+    const message = document.getElementById("message").value;
+
+    socket.emit("sendMessage", {
+      roomId: room,
+      senderId: "user1",
+      message: message
+    });
+
+    document.getElementById("message").value = ""; // clear input
+  }
+
+  // 🔥 RECEIVE NEW MESSAGE (REAL-TIME)
+  socket.on("receiveMessage", (data) => {
+    const li = document.createElement("li");
+    li.innerText = data.message;
+    document.getElementById("messages").appendChild(li);
+  });
+
+  // 🔥 LOAD OLD MESSAGES (HISTORY)
+  socket.on("loadMessages", (messages) => {
+    const ul = document.getElementById("messages");
+    ul.innerHTML = ""; // clear previous list
+
+    messages.forEach(msg => {
+      const li = document.createElement("li");
+      li.innerText = msg.message;
+      ul.appendChild(li);
+    });
+  });
+
+</script>
+
+</body>
+</html>
