@@ -7,11 +7,18 @@
 
 <h2>Real-Time Chat</h2>
 
+<!-- ROOM -->
 <input id="room" placeholder="Enter Room ID" />
 <button onclick="joinRoom()">Join Room</button>
 
 <br><br>
 
+<!-- USERNAME -->
+<input id="username" placeholder="Enter your name (student/counselor)" />
+
+<br><br>
+
+<!-- MESSAGE -->
 <input id="message" placeholder="Enter Message" />
 <button onclick="sendMessage()">Send</button>
 
@@ -30,10 +37,16 @@
   function sendMessage() {
     const room = document.getElementById("room").value;
     const message = document.getElementById("message").value;
+    const username = document.getElementById("username").value;
+
+    if (!username) {
+      alert("Enter your name first!");
+      return;
+    }
 
     socket.emit("sendMessage", {
       roomId: room,
-      senderId: "user1",
+      senderId: username,
       message: message
     });
 
@@ -43,7 +56,7 @@
   // 🔥 RECEIVE NEW MESSAGE (REAL-TIME)
   socket.on("receiveMessage", (data) => {
     const li = document.createElement("li");
-    li.innerText = data.message;
+    li.innerText = data.senderId + ": " + data.message;
     document.getElementById("messages").appendChild(li);
   });
 
@@ -54,7 +67,7 @@
 
     messages.forEach(msg => {
       const li = document.createElement("li");
-      li.innerText = msg.message;
+      li.innerText = msg.senderId + ": " + msg.message;
       ul.appendChild(li);
     });
   });
