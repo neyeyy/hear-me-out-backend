@@ -1,21 +1,19 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // REGISTER
 exports.register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.json({ success: false, message: "User already exists" });
     }
 
-    // hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // create user
     const user = new User({
       name,
       email,
@@ -30,8 +28,6 @@ exports.register = async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 };
-
-const jwt = require('jsonwebtoken');
 
 // LOGIN
 exports.login = async (req, res) => {
@@ -57,10 +53,17 @@ exports.login = async (req, res) => {
       { expiresIn: '1d' }
     );
 
+    // ✅ FIXED RESPONSE (THIS IS THE IMPORTANT PART)
     res.json({
       success: true,
       message: "Login successful",
-      token
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
     });
 
   } catch (error) {

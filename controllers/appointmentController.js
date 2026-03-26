@@ -1,12 +1,97 @@
 const Appointment = require('../models/Appointment');
 const Assessment = require('../models/Assessment');
 
-// CREATE APPOINTMENT (AUTO + PRIORITY)
+
+// 🧠 CREATE ASSESSMENT (NEW)
+exports.createAssessment = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { answers } = req.body;
+
+    if (!answers || !Array.isArray(answers)) {
+      return res.status(400).json({
+        success: false,
+        message: "Answers are required"
+      });
+    }
+
+    // ✅ COMPUTE SCORE
+    const score = answers.reduce((sum, val) => sum + Number(val), 0);
+
+    // ✅ DETERMINE SEVERITY
+    let severity = "LOW";
+
+    if (score >= 10) {
+      severity = "HIGH";
+    } else if (score >= 5) {
+      severity = "MEDIUM";
+    }
+
+    // ✅ SAVE ASSESSMENT
+    const assessment = await Assessment.create({
+      studentId,
+      answers,
+      score,
+      severity
+    });
+
+    res.json({
+      success: true,
+      message: "Assessment submitted",
+      score,
+      severity,
+      assessment
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+
+// 🔍 CHECK IF ASSESSMENT EXISTS (NEW)
+exports.checkAssessment = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+
+    const existing = await Assessment.findOne({ studentId });
+
+    res.json({
+      success: true,
+      hasAssessment: !!existing
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+
+// 🚀 CREATE APPOINTMENT (AUTO + NO DUPLICATES)
 exports.createAppointment = async (req, res) => {
   try {
     const studentId = req.user.id;
 
-    // get latest assessment
+    // ❗ PREVENT DUPLICATE ACTIVE APPOINTMENT
+    const existing = await Appointment.findOne({
+      studentId,
+      status: { $in: ["PENDING", "ONGOING"] }
+    });
+
+    if (existing) {
+      return res.json({
+        success: false,
+        message: "You already have an active appointment"
+      });
+    }
+
+    // 🔍 GET LATEST ASSESSMENT
     const latestAssessment = await Assessment.findOne({ studentId })
       .sort({ createdAt: -1 });
 
@@ -19,7 +104,7 @@ exports.createAppointment = async (req, res) => {
 
     const severity = latestAssessment.severity;
 
-    // AUTO ASSIGNMENT LOGIC
+    // 👤 AUTO ASSIGN
     let assignedTo = "Student Assistant";
 
     if (severity === "HIGH") {
@@ -28,7 +113,7 @@ exports.createAppointment = async (req, res) => {
       assignedTo = "Review Needed";
     }
 
-    // PRIORITY SCHEDULING LOGIC
+    // 📅 PRIORITY SCHEDULING
     const today = new Date();
     let scheduleDate = new Date(today);
 
@@ -40,14 +125,13 @@ exports.createAppointment = async (req, res) => {
       scheduleDate.setDate(today.getDate() + 5);
     }
 
-    const appointment = new Appointment({
+    const appointment = await Appointment.create({
       studentId,
       severity,
       assignedTo,
-      scheduleDate
+      scheduleDate,
+      status: "PENDING"
     });
-
-    await appointment.save();
 
     res.json({
       success: true,
@@ -64,7 +148,7 @@ exports.createAppointment = async (req, res) => {
 };
 
 
-// DASHBOARD (GET ALL APPOINTMENTS WITH PRIORITY SORT)
+// 📊 GET ALL APPOINTMENTS (PRIORITY SORT)
 exports.getAllAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find()
@@ -104,13 +188,12 @@ exports.getAllAppointments = async (req, res) => {
 };
 
 
-// ✅ UPDATE STATUS (NEW FEATURE)
+// 🔄 UPDATE STATUS (IMPROVED)
 exports.updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    // validation
     if (!status) {
       return res.json({
         success: false,
@@ -118,7 +201,8 @@ exports.updateAppointmentStatus = async (req, res) => {
       });
     }
 
-    const allowedStatus = ["PENDING", "COMPLETED"];
+    const allowedStatus = ["PENDING", "ONGOING", "COMPLETED"];
+
     if (!allowedStatus.includes(status)) {
       return res.json({
         success: false,
