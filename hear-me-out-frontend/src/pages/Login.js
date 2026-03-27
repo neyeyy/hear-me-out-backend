@@ -14,22 +14,23 @@ function Login() {
       // ✅ Save token
       localStorage.setItem("token", res.data.token);
 
-      // ✅ Safe check for user
+      // ✅ Safe user check
       const user = res.data.user;
 
-      if (!user || !user.role) {
+      if (!user || !user.role || !user.id) {
         alert("Login error: user data missing");
         return;
       }
 
+      // ✅ Save user info
       localStorage.setItem("role", user.role);
+      localStorage.setItem("userId", user.id); // 🔥 IMPORTANT FOR CHAT
 
-      // 🔥 ROLE-BASED + FLOW-BASED REDIRECT
+      // 🔥 FLOW
       if (user.role === "student") {
-        // 👉 ALWAYS go to assessment first
         navigate("/assessment");
       } else {
-        navigate("/admin");
+        navigate("/admin"); // later we replace with counselor dashboard
       }
 
     } catch (err) {
@@ -83,6 +84,17 @@ function Login() {
       >
         Login
       </button>
+
+      {/* 🔥 SIGN UP LINK */}
+      <p style={{ marginTop: "15px", textAlign: "center" }}>
+        Don’t have an account?{" "}
+        <span
+          style={{ color: "blue", cursor: "pointer" }}
+          onClick={() => navigate("/register")}
+        >
+          Sign Up
+        </span>
+      </p>
     </div>
   );
 }
