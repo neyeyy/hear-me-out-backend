@@ -17,6 +17,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.1",
+    "recharts": "^2.1.16",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {

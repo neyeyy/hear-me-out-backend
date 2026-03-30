@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom"; // 🔥 NEW
 import API from "../../services/api";
 import MoodCalendar from "../../components/MoodCalendar";
 
@@ -17,6 +18,8 @@ function StudentDashboard() {
   const [showPopup, setShowPopup] = useState(false);
   const [appointment, setAppointment] = useState(null);
 
+  const navigate = useNavigate(); // 🔥 NEW
+
   useEffect(() => {
     fetchAppointment();
   }, []);
@@ -34,7 +37,7 @@ function StudentDashboard() {
   const handleMoodSelect = (mood) => {
     setSelectedMood(mood);
     setQuote(quotes[mood]);
-    setShowPopup(true); // 👈 SHOW POPUP HERE
+    setShowPopup(true);
   };
 
   // 🔥 SAVE + CONTINUE
@@ -53,6 +56,14 @@ function StudentDashboard() {
 
     setShowPopup(false);
     setShowCalendar(true);
+  };
+
+  // 🔥 RESET TO TRACK AGAIN
+  const handleTrackAgain = () => {
+    setShowCalendar(false);
+    setSelectedMood("");
+    setNote("");
+    setQuote("");
   };
 
   return (
@@ -127,12 +138,45 @@ function StudentDashboard() {
         </div>
       )}
 
-      {/* STEP 2 */}
+      {/* STEP 2: Calendar + Actions */}
       {showCalendar && (
         <div style={{ marginTop: "20px" }}>
           
           <MoodCalendar />
 
+          {/* 🔥 ACTION BUTTONS (NO DEAD END) */}
+          <div style={{ marginTop: "20px", textAlign: "center" }}>
+            
+            <button
+              onClick={() => navigate("/chat")}
+              style={{
+                padding: "10px 20px",
+                marginRight: "10px",
+                background: "#2196F3",
+                color: "white",
+                border: "none",
+                borderRadius: "8px"
+              }}
+            >
+              Go to Chat 💬
+            </button>
+
+            <button
+              onClick={handleTrackAgain}
+              style={{
+                padding: "10px 20px",
+                background: "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "8px"
+              }}
+            >
+              Track Again 🔁
+            </button>
+
+          </div>
+
+          {/* 🔥 APPOINTMENT */}
           <div style={{
             marginTop: "20px",
             padding: "15px",

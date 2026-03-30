@@ -5,14 +5,28 @@ import API from "../services/api";
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false); // 🔥 UX improvement
   const navigate = useNavigate();
 
   const handleLogin = async () => {
+    // 🔥 Prevent empty input
+    if (!email || !password) {
+      alert("Please enter email and password");
+      return;
+    }
+
     try {
+      setLoading(true);
+
       const res = await API.post("/auth/login", { email, password });
 
       // ✅ Save token
-      localStorage.setItem("token", res.data.token);
+      if (res.data.token) {
+        localStorage.setItem("token", res.data.token);
+      } else {
+        alert("Login failed: no token received");
+        return;
+      }
 
       // ✅ Safe user check
       const user = res.data.user;
@@ -24,18 +38,20 @@ function Login() {
 
       // ✅ Save user info
       localStorage.setItem("role", user.role);
-      localStorage.setItem("userId", user.id); // 🔥 IMPORTANT FOR CHAT
+      localStorage.setItem("userId", user.id);
 
-      // 🔥 FLOW
+      // 🔥 ROLE + FLOW REDIRECT
       if (user.role === "student") {
         navigate("/assessment");
       } else {
-        navigate("/admin"); // later we replace with counselor dashboard
+        navigate("/admin");
       }
 
     } catch (err) {
       console.log("ERROR:", err.response?.data || err.message);
-      alert("Login failed");
+      alert(err.response?.data?.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,6 +66,7 @@ function Login() {
 
       <input
         placeholder="Email"
+        value={email}
         style={{
           width: "100%",
           padding: "10px",
@@ -62,6 +79,7 @@ function Login() {
       <input
         type="password"
         placeholder="Password"
+        value={password}
         style={{
           width: "100%",
           padding: "10px",
@@ -73,16 +91,18 @@ function Login() {
 
       <button
         onClick={handleLogin}
+        disabled={loading}
         style={{
           width: "100%",
           padding: "10px",
-          background: "#4CAF50",
+          background: loading ? "#999" : "#4CAF50",
           color: "white",
           border: "none",
-          borderRadius: "8px"
+          borderRadius: "8px",
+          cursor: "pointer"
         }}
       >
-        Login
+        {loading ? "Logging in..." : "Login"}
       </button>
 
       {/* 🔥 SIGN UP LINK */}

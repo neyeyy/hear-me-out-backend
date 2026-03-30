@@ -28,18 +28,20 @@ const authRoutes = require('./routes/authRoutes');
 const assessmentRoutes = require('./routes/assessmentRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const moodRoutes = require('./routes/moodRoutes');
+const userRoutes = require('./routes/userRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 
-// ✅ FIXED ROUTE NAMING (IMPORTANT)
 app.use('/api/auth', authRoutes);
 app.use('/api/assessment', assessmentRoutes);
-app.use('/api/appointments', appointmentRoutes); // ✅ plural
-app.use('/api/moods', moodRoutes); // ✅ plural
+app.use('/api/appointments', appointmentRoutes);
+app.use('/api/moods', moodRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // 🔥 TEST ROUTE
 app.get('/', (req, res) => {
   res.json({ message: "API is running" });
 });
-
 
 // ================= SOCKET.IO =================
 io.on('connection', (socket) => {
@@ -48,11 +50,11 @@ io.on('connection', (socket) => {
   // 🔥 JOIN ROOM
   socket.on('joinRoom', async (roomId) => {
     try {
-      socket.join(roomId);
-      console.log("📌 Joined room:", roomId);
+      if (!roomId) return;
 
-      // ✅ LOAD OLD MESSAGES
-      const messages = await Message.find({ roomId })
+      socket.join(String(roomId));
+
+      const messages = await Message.find({ roomId: String(roomId) })
         .sort({ createdAt: 1 });
 
       socket.emit('loadMessages', messages);
@@ -65,25 +67,52 @@ io.on('connection', (socket) => {
   // 🔥 SEND MESSAGE
   socket.on('sendMessage', async (data) => {
     try {
-      if (!data.roomId || !data.message) {
-        return;
-      }
+      if (!data.roomId || !data.message || !data.senderId) return;
 
-      console.log("💬 Message received:", data);
-
-      // ✅ SAVE MESSAGE
       const newMessage = await Message.create({
-        roomId: data.roomId,
-        senderId: data.senderId || "anonymous",
-        message: data.message
+        roomId: String(data.roomId),
+        senderId: String(data.senderId),
+        message: data.message,
+        seen: false
       });
 
-      // ✅ EMIT TO ROOM
-      io.to(data.roomId).emit('receiveMessage', newMessage);
+      io.to(String(data.roomId)).emit('receiveMessage', newMessage);
 
     } catch (error) {
       console.log("❌ Chat error:", error.message);
     }
+  });
+
+  // 🔥 MARK AS SEEN (REAL FIX)
+  socket.on('markSeen', async ({ roomId, userId }) => {
+    try {
+      await Message.updateMany(
+        {
+          roomId: String(roomId),
+          senderId: { $ne: String(userId) },
+          seen: false
+        },
+        { seen: true }
+      );
+
+      // ✅ SEND UPDATED DATA FROM DB
+      const updatedMessages = await Message.find({ roomId: String(roomId) })
+        .sort({ createdAt: 1 });
+
+      io.to(String(roomId)).emit('messagesSeen', updatedMessages);
+
+    } catch (error) {
+      console.log("❌ Seen error:", error.message);
+    }
+  });
+
+  // 🔥 TYPING EVENTS
+  socket.on("typing", ({ roomId }) => {
+    socket.to(String(roomId)).emit("typing");
+  });
+
+  socket.on("stopTyping", ({ roomId }) => {
+    socket.to(String(roomId)).emit("stopTyping");
   });
 
   // 🔴 DISCONNECT
@@ -92,7 +121,6 @@ io.on('connection', (socket) => {
   });
 });
 // =================================================
-
 
 // 🔥 START SERVER
 const PORT = process.env.PORT || 5000;
