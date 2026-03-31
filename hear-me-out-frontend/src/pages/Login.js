@@ -5,11 +5,10 @@ import API from "../services/api";
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false); // 🔥 UX improvement
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async () => {
-    // 🔥 Prevent empty input
     if (!email || !password) {
       alert("Please enter email and password");
       return;
@@ -20,7 +19,6 @@ function Login() {
 
       const res = await API.post("/auth/login", { email, password });
 
-      // ✅ Save token
       if (res.data.token) {
         localStorage.setItem("token", res.data.token);
       } else {
@@ -28,7 +26,6 @@ function Login() {
         return;
       }
 
-      // ✅ Safe user check
       const user = res.data.user;
 
       if (!user || !user.role || !user.id) {
@@ -36,13 +33,26 @@ function Login() {
         return;
       }
 
-      // ✅ Save user info
       localStorage.setItem("role", user.role);
       localStorage.setItem("userId", user.id);
 
-      // 🔥 ROLE + FLOW REDIRECT
+      // 🔥 FIXED REDIRECT LOGIC
       if (user.role === "student") {
-        navigate("/assessment");
+        try {
+          const checkRes = await API.get(`/assessment/check/${user.id}`);
+          const result = checkRes.data;
+
+          if (result.hasAssessment) {
+            navigate("/student"); // ✅ FIXED
+          } else {
+            navigate("/assessment");
+          }
+
+        } catch (error) {
+          console.error("Assessment check error:", error);
+          navigate("/assessment");
+        }
+
       } else {
         navigate("/admin");
       }
@@ -105,7 +115,6 @@ function Login() {
         {loading ? "Logging in..." : "Login"}
       </button>
 
-      {/* 🔥 SIGN UP LINK */}
       <p style={{ marginTop: "15px", textAlign: "center" }}>
         Don’t have an account?{" "}
         <span

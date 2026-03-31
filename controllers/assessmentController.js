@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 // 🧠 CREATE ASSESSMENT
 exports.createAssessment = async (req, res) => {
   try {
-    const studentId = new mongoose.Types.ObjectId(req.user.id); // 🔥 FIX
+    const studentId = new mongoose.Types.ObjectId(req.user.id);
     const { answers } = req.body;
 
     if (!answers || !Array.isArray(answers)) {
@@ -50,16 +50,12 @@ exports.createAssessment = async (req, res) => {
 };
 
 
-// 🔍 CHECK IF ASSESSMENT EXISTS
+// 🔍 CHECK IF ASSESSMENT EXISTS (USED IN LOGIN)
 exports.checkAssessment = async (req, res) => {
   try {
-    console.log("USER:", req.user);
-
-    const studentId = new mongoose.Types.ObjectId(req.user.id); // 🔥 FIX
+    const { studentId } = req.params;
 
     const existing = await Assessment.findOne({ studentId });
-
-    console.log("CHECK RESULT:", existing);
 
     res.json({
       success: true,
@@ -67,9 +63,10 @@ exports.checkAssessment = async (req, res) => {
     });
 
   } catch (error) {
-    res.json({
+    console.error(error);
+    res.status(500).json({
       success: false,
-      message: error.message
+      message: "Server error"
     });
   }
 };
