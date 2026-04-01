@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../services/api";
 
@@ -11,21 +11,77 @@ const questions = [
 ];
 
 function Assessment() {
-  const [answers, setAnswers] = useState(Array(questions.length).fill(0));
+  const [messages, setMessages] = useState([]);
+  const [current, setCurrent] = useState(0);
+  const [answers, setAnswers] = useState([]);
   const [result, setResult] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
 
-  const navigate = useNavigate(); // ✅ required
+  const [started, setStarted] = useState(false);
 
-  const handleChange = (index, value) => {
-    const newAnswers = [...answers];
-    newAnswers[index] = Number(value);
-    setAnswers(newAnswers);
+  const navigate = useNavigate();
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
+
+  const addBotMessage = useCallback((text) => {
+    setMessages((prev) => [...prev, { sender: "bot", text }]);
+  }, []);
+
+  const addUserMessage = useCallback((text) => {
+    setMessages((prev) => [...prev, { sender: "user", text }]);
+  }, []);
+
+  const simulateTyping = useCallback((callback) => {
+    setIsTyping(true);
+    setTimeout(() => {
+      setIsTyping(false);
+      callback();
+    }, 800);
+  }, []);
+
+  const startChat = useCallback(() => {
+    addBotMessage("Hello 👋 I'm your Assessment Bot.");
+    simulateTyping(() => addBotMessage(questions[0]));
+  }, [addBotMessage, simulateTyping]);
+
+  const handleStart = () => {
+    setStarted(true);
+    startChat();
   };
 
-  const submitAssessment = async () => {
+  const handleAnswer = (value, label) => {
+    addUserMessage(label);
+
+    const updated = [...answers, value];
+    setAnswers(updated);
+
+    if (current < questions.length - 1) {
+      const next = current + 1;
+      setCurrent(next);
+
+      simulateTyping(() => addBotMessage(questions[next]));
+    } else {
+      submitAssessment(updated);
+    }
+  };
+
+  const submitAssessment = async (finalAnswers) => {
     try {
-      const res = await API.post("/assessment", { answers });
+      const res = await API.post("/assessment", { answers: finalAnswers });
       setResult(res.data);
+
+      simulateTyping(() => {
+        addBotMessage(`Your score is ${res.data.score}`);
+        addBotMessage(`Severity: ${res.data.severity}`);
+
+        if (res.data.severity === "Severe") {
+          addBotMessage("⚠️ We recommend immediate counseling.");
+        }
+      });
+
     } catch (err) {
       console.log(err);
       alert("Error submitting assessment");
@@ -33,82 +89,185 @@ function Assessment() {
   };
 
   const goToDashboard = () => {
-    navigate("/student"); // 👉 manual redirect
+    navigate("/student");
   };
 
   return (
     <div style={{
-      maxWidth: "500px",
+      maxWidth: "420px",
       margin: "auto",
-      padding: "20px",
+      height: "95vh",
+      display: "flex",
+      flexDirection: "column",
+      borderRadius: "15px",
+      overflow: "hidden",
+      boxShadow: "0 5px 20px rgba(0,0,0,0.2)",
       fontFamily: "Arial"
     }}>
-      <h2 style={{ textAlign: "center" }}>Mental Health Assessment</h2>
 
-      {/* QUESTIONS */}
-      {!result && questions.map((q, index) => (
-        <div key={index} style={{ marginBottom: "15px" }}>
-          <p>{q}</p>
-
-          <select
-            value={answers[index]}
-            onChange={(e) => handleChange(index, e.target.value)}
-            style={{ width: "100%", padding: "8px" }}
-          >
-            <option value={0}>0 - Not at all</option>
-            <option value={1}>1 - Several days</option>
-            <option value={2}>2 - More than half the days</option>
-            <option value={3}>3 - Nearly every day</option>
-          </select>
-        </div>
-      ))}
-
-      {/* SUBMIT BUTTON */}
-      {!result && (
-        <button
-          onClick={submitAssessment}
-          style={{
-            width: "100%",
-            padding: "12px",
-            background: "#4CAF50",
-            color: "white",
-            border: "none",
-            borderRadius: "8px"
-          }}
-        >
-          Submit Assessment
-        </button>
-      )}
-
-      {/* RESULT */}
-      {result && (
+      {/* HEADER */}
+      <div style={{
+        padding: "15px",
+        background: "#0084ff",
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        gap: "10px"
+      }}>
         <div style={{
-          marginTop: "20px",
-          padding: "15px",
-          background: "#f0f4ff",
-          borderRadius: "10px",
+          width: "40px",
+          height: "40px",
+          borderRadius: "50%",
+          background: "white",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: "bold",
+          color: "#0084ff"
+        }}>
+          🤖
+        </div>
+
+        <div>
+          <div style={{ fontWeight: "bold" }}>Assessment Bot</div>
+          <div style={{ fontSize: "12px", opacity: 0.8 }}>
+            {isTyping ? "Typing..." : "Online"}
+          </div>
+        </div>
+      </div>
+
+      {!started ? (
+        <div style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "20px",
           textAlign: "center"
         }}>
-          <h3>Result</h3>
-          <p><strong>Score:</strong> {result.score}</p>
-          <p><strong>Severity:</strong> {result.severity}</p>
+          <h2>Welcome 👋</h2>
 
-          {/* ✅ OK BUTTON */}
+          <p style={{ marginBottom: "20px" }}>
+            You are about to take a short mental health assessment.
+          </p>
+
+          <p style={{ marginBottom: "30px", fontSize: "14px", color: "#555" }}>
+            Please answer honestly. This will only take a few minutes.
+          </p>
+
           <button
-            onClick={goToDashboard}
+            onClick={handleStart}
             style={{
-              marginTop: "15px",
-              padding: "10px 20px",
-              background: "#2196F3",
+              padding: "12px 25px",
+              background: "#0084ff",
               color: "white",
               border: "none",
-              borderRadius: "8px"
+              borderRadius: "25px",
+              fontSize: "16px",
+              cursor: "pointer"
             }}
           >
-            OK
+            Start Assessment
           </button>
         </div>
+      ) : (
+        <>
+          {/* CHAT AREA */}
+          <div style={{
+            flex: 1,
+            padding: "15px",
+            background: "#e5ddd5",
+            overflowY: "auto"
+          }}>
+            {messages.map((msg, i) => (
+              <div key={i} style={{
+                display: "flex",
+                justifyContent: msg.sender === "user" ? "flex-end" : "flex-start",
+                marginBottom: "10px"
+              }}>
+                <div style={{
+                  padding: "10px 14px",
+                  borderRadius: "18px",
+                  maxWidth: "70%",
+                  background: msg.sender === "user" ? "#0084ff" : "#fff",
+                  color: msg.sender === "user" ? "white" : "black"
+                }}>
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+
+            {isTyping && <div>Typing...</div>}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* ✅ MODERN ANSWERS */}
+          {!result && (
+            <div style={{
+              padding: "10px",
+              background: "#fff",
+              borderTop: "1px solid #ddd",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "8px",
+              justifyContent: "center"
+            }}>
+              {[
+                { value: 0, label: "Not at all" },
+                { value: 1, label: "Several days" },
+                { value: 2, label: "More than half" },
+                { value: 3, label: "Nearly every day" }
+              ].map((opt, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleAnswer(opt.value, opt.label)}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: "25px",
+                    border: "1px solid #0084ff",
+                    background: "#fff",
+                    color: "#0084ff",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = "#0084ff";
+                    e.target.style.color = "#fff";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = "#fff";
+                    e.target.style.color = "#0084ff";
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* RESULT */}
+          {result && (
+            <div style={{ padding: "10px", textAlign: "center" }}>
+              <button
+                onClick={goToDashboard}
+                style={{
+                  padding: "10px 20px",
+                  background: "#0084ff",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "20px"
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          )}
+        </>
       )}
+
     </div>
   );
 }
