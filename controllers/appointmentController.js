@@ -35,10 +35,9 @@ exports.createAssessment = async (req, res) => {
       severity
     });
 
-    // 🔥 AUTO CREATE APPOINTMENT IF HIGH (MAIN FIX)
+    // 🔥 AUTO CREATE APPOINTMENT IF HIGH
     if (severity === "HIGH") {
 
-      // ❗ PREVENT DUPLICATE
       const existing = await Appointment.findOne({
         studentId,
         status: { $in: ["PENDING", "ONGOING"] }
@@ -46,17 +45,13 @@ exports.createAssessment = async (req, res) => {
 
       if (!existing) {
 
-        // 👤 ASSIGN
-        let assignedTo = "Guidance Counselor";
-
-        // 📅 SCHEDULE (HIGH = NEXT DAY)
         const scheduleDate = new Date();
         scheduleDate.setDate(scheduleDate.getDate() + 1);
 
         const appointment = await Appointment.create({
           studentId,
           severity,
-          assignedTo,
+          assignedTo: "Guidance Counselor",
           scheduleDate,
           status: "PENDING"
         });
@@ -111,7 +106,6 @@ exports.createAppointment = async (req, res) => {
   try {
     const studentId = req.user.id;
 
-    // ❗ PREVENT DUPLICATE
     const existing = await Appointment.findOne({
       studentId,
       status: { $in: ["PENDING", "ONGOING"] }
@@ -124,7 +118,6 @@ exports.createAppointment = async (req, res) => {
       });
     }
 
-    // 🔍 GET LATEST ASSESSMENT
     const latestAssessment = await Assessment.findOne({ studentId })
       .sort({ createdAt: -1 });
 
@@ -137,7 +130,6 @@ exports.createAppointment = async (req, res) => {
 
     const severity = latestAssessment.severity;
 
-    // 👤 AUTO ASSIGN
     let assignedTo = "Student Assistant";
 
     if (severity === "HIGH") {
@@ -146,7 +138,6 @@ exports.createAppointment = async (req, res) => {
       assignedTo = "Review Needed";
     }
 
-    // 📅 PRIORITY SCHEDULING
     const today = new Date();
     let scheduleDate = new Date(today);
 
@@ -221,12 +212,22 @@ exports.getAllAppointments = async (req, res) => {
 };
 
 
-// 🔥 GET MY APPOINTMENT (FOR STUDENT DASHBOARD)
+// 🔥 GET MY APPOINTMENT (FIXED)
 exports.getMyAppointment = async (req, res) => {
   try {
     const studentId = req.user.id;
 
-    const appointment = await Appointment.findOne({ studentId });
+    // ✅ GET ACTIVE FIRST
+    let appointment = await Appointment.findOne({
+      studentId,
+      status: { $in: ["PENDING", "ONGOING"] }
+    }).sort({ createdAt: -1 });
+
+    // 🔁 FALLBACK TO LATEST
+    if (!appointment) {
+      appointment = await Appointment.findOne({ studentId })
+        .sort({ createdAt: -1 });
+    }
 
     res.json(appointment);
 
@@ -238,13 +239,13 @@ exports.getMyAppointment = async (req, res) => {
 };
 
 
-// 🔄 UPDATE STATUS
+// 🔄 UPDATE STATUS (FIXED ENUM)
 exports.updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
-    const allowedStatus = ["PENDING", "ONGOING", "COMPLETED"];
+    const allowedStatus = ["PENDING", "ONGOING", "DONE"];
 
     if (!allowedStatus.includes(status)) {
       return res.json({

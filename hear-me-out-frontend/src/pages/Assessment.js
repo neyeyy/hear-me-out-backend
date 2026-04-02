@@ -16,7 +16,6 @@ function Assessment() {
   const [answers, setAnswers] = useState([]);
   const [result, setResult] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
-
   const [started, setStarted] = useState(false);
 
   const navigate = useNavigate();
@@ -61,24 +60,35 @@ function Assessment() {
     if (current < questions.length - 1) {
       const next = current + 1;
       setCurrent(next);
-
       simulateTyping(() => addBotMessage(questions[next]));
     } else {
       submitAssessment(updated);
     }
   };
 
+  // ✅ FIXED LOGIC (KEEP THIS)
   const submitAssessment = async (finalAnswers) => {
     try {
       const res = await API.post("/assessment", { answers: finalAnswers });
+
       setResult(res.data);
 
       simulateTyping(() => {
         addBotMessage(`Your score is ${res.data.score}`);
         addBotMessage(`Severity: ${res.data.severity}`);
 
-        if (res.data.severity === "Severe") {
+        // ✅ FIX: correct severity
+        if (res.data.severity === "HIGH") {
           addBotMessage("⚠️ We recommend immediate counseling.");
+        }
+
+        // ✅ SHOW APPOINTMENT
+        if (res.data.appointment) {
+          addBotMessage("📅 An appointment has been scheduled for you.");
+        }
+
+        if (res.data.severity === "MEDIUM" && !res.data.appointment) {
+          addBotMessage("💬 You may consider talking to a counselor.");
         }
       });
 
@@ -173,7 +183,7 @@ function Assessment() {
         </div>
       ) : (
         <>
-          {/* CHAT AREA */}
+          {/* CHAT */}
           <div style={{
             flex: 1,
             padding: "15px",
@@ -202,7 +212,7 @@ function Assessment() {
             <div ref={bottomRef} />
           </div>
 
-          {/* ✅ MODERN ANSWERS */}
+          {/* ✅ POLISHED BUTTONS (RESTORED DESIGN) */}
           {!result && (
             <div style={{
               padding: "10px",

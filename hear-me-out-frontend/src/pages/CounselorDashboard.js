@@ -6,11 +6,13 @@ function CounselorDashboard() {
   const [students, setStudents] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState("");
+  const [appointments, setAppointments] = useState({});
 
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchStudents();
+    fetchAppointments();
   }, []);
 
   // 🔥 FETCH STUDENTS
@@ -18,7 +20,6 @@ function CounselorDashboard() {
     try {
       const res = await API.get("/users/students");
 
-      // 🔥 SORT BY PRIORITY
       const sorted = res.data.students.sort((a, b) => {
         const priority = { HIGH: 1, MEDIUM: 2, LOW: 3 };
         return (priority[a.severity] || 4) - (priority[b.severity] || 4);
@@ -32,7 +33,48 @@ function CounselorDashboard() {
     }
   };
 
-  // 🔍 SEARCH FILTER
+  // 🔥 FETCH APPOINTMENTS
+  const fetchAppointments = async () => {
+    try {
+      const res = await API.get("/appointments");
+
+      const map = {};
+
+      res.data.appointments.forEach(app => {
+        const studentId =
+          typeof app.studentId === "object"
+            ? app.studentId._id
+            : app.studentId;
+
+        map[studentId] = app;
+      });
+
+      setAppointments(map);
+
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  // 🔥 COMPLETE APPOINTMENT (FIXED)
+  const handleComplete = async (appointmentId) => {
+    try {
+      if (!window.confirm("Mark this session as completed?")) return;
+
+      await API.patch(`/appointments/${appointmentId}`, {
+        status: "DONE" // ✅ FIXED
+      });
+
+      alert("✅ Session marked as completed");
+
+      fetchAppointments();
+
+    } catch (err) {
+      console.error("❌ ERROR:", err.response?.data || err.message);
+    }
+  };
+
+  // 🔍 SEARCH
   useEffect(() => {
     const result = students.filter((s) =>
       s.name.toLowerCase().includes(search.toLowerCase())
@@ -74,7 +116,6 @@ function CounselorDashboard() {
       {/* MAIN */}
       <div style={{ flex: 1, padding: "20px", overflowY: "auto" }}>
 
-        {/* 🔥 DASHBOARD CARDS */}
         <h2>📊 Overview</h2>
 
         <div style={{
@@ -89,7 +130,7 @@ function CounselorDashboard() {
           <Card title="Low" value={low} color="#52c41a" />
         </div>
 
-        {/* 🚨 HIGH RISK PANEL */}
+        {/* HIGH RISK */}
         <div style={{ marginTop: "40px" }}>
           <h3 style={{ color: "red" }}>🚨 High Risk Students</h3>
 
@@ -111,7 +152,7 @@ function CounselorDashboard() {
           )}
         </div>
 
-        {/* 🔍 SEARCH */}
+        {/* SEARCH */}
         <div style={{ marginTop: "40px" }}>
           <input
             placeholder="Search student..."
@@ -126,7 +167,7 @@ function CounselorDashboard() {
           />
         </div>
 
-        {/* 👥 STUDENT TABLE */}
+        {/* TABLE */}
         <h2 style={{ marginTop: "20px" }}>👥 Student List</h2>
 
         {filtered.length === 0 ? (
@@ -142,36 +183,62 @@ function CounselorDashboard() {
                 <th style={cell}>Name</th>
                 <th style={cell}>Email</th>
                 <th style={cell}>Severity</th>
+                <th style={cell}>Status</th>
                 <th style={cell}>Action</th>
               </tr>
             </thead>
 
             <tbody>
-              {filtered.map((student) => (
-                <tr key={student._id}>
-                  <td style={cell}>{student.name}</td>
-                  <td style={cell}>{student.email}</td>
+              {filtered.map((student) => {
+                const appointment = appointments[student._id];
 
-                  <td style={{
-                    ...cell,
-                    color:
-                      student.severity === "HIGH" ? "red" :
-                      student.severity === "MEDIUM" ? "orange" :
-                      "green"
-                  }}>
-                    {student.severity || "N/A"}
-                  </td>
+                return (
+                  <tr key={student._id}>
+                    <td style={cell}>{student.name}</td>
+                    <td style={cell}>{student.email}</td>
 
-                  <td style={cell}>
-                    <button
-                      onClick={() => openChat(student._id)}
-                      style={btn}
-                    >
-                      Chat 💬
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    <td style={{
+                      ...cell,
+                      color:
+                        student.severity === "HIGH" ? "red" :
+                        student.severity === "MEDIUM" ? "orange" :
+                        "green"
+                    }}>
+                      {student.severity || "N/A"}
+                    </td>
+
+                    <td style={cell}>
+                      {appointment ? (
+                        appointment.status === "DONE" ? (
+                          <span style={{ color: "green" }}>✅ Completed</span>
+                        ) : (
+                          <span style={{ color: "orange" }}>{appointment.status}</span>
+                        )
+                      ) : (
+                        "No Appointment"
+                      )}
+                    </td>
+
+                    <td style={cell}>
+                      <button
+                        onClick={() => openChat(student._id)}
+                        style={btn}
+                      >
+                        Chat 💬
+                      </button>
+
+                      {appointment && appointment.status !== "DONE" && (
+                        <button
+                          onClick={() => handleComplete(appointment._id)}
+                          style={{ ...btn, background: "green", marginLeft: "5px" }}
+                        >
+                          Complete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -181,7 +248,7 @@ function CounselorDashboard() {
   );
 }
 
-// 🔥 CARD
+// CARD
 function Card({ title, value, color }) {
   return (
     <div style={{
@@ -199,7 +266,7 @@ function Card({ title, value, color }) {
   );
 }
 
-// 🔥 STYLES
+// STYLES
 const cell = {
   border: "1px solid #ddd",
   padding: "10px",

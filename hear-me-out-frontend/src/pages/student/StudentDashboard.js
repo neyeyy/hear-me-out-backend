@@ -27,14 +27,30 @@ function StudentDashboard() {
 
   const navigate = useNavigate();
 
+  // 🔥 FIX: AUTO REFRESH APPOINTMENT
   useEffect(() => {
     fetchAppointment();
+
+    const interval = setInterval(() => {
+      fetchAppointment();
+    }, 3000); // every 3 seconds
+
+    return () => clearInterval(interval);
   }, []);
 
   const fetchAppointment = async () => {
     try {
       const res = await API.get("/appointments/my");
-      setAppointment(res.data);
+
+      // 🔥 FIX: handle array or object response
+      const data = res.data;
+
+      if (Array.isArray(data)) {
+        setAppointment(data.length > 0 ? data[0] : null);
+      } else {
+        setAppointment(data);
+      }
+
     } catch (err) {
       console.log(err);
     }
@@ -53,7 +69,11 @@ function StudentDashboard() {
         note: note
       });
 
-      fetchAppointment();
+      // 🔥 FORCE REFRESH AFTER ACTION
+      setTimeout(() => {
+        fetchAppointment();
+      }, 500);
+
     } catch (err) {
       console.log(err);
     }
@@ -86,10 +106,7 @@ function StudentDashboard() {
         boxShadow: "0 15px 40px rgba(0,0,0,0.15)"
       }}>
 
-        <h2 style={{
-          textAlign: "center",
-          marginBottom: "10px"
-        }}>
+        <h2 style={{ textAlign: "center", marginBottom: "10px" }}>
           Hear Me Out 💙
         </h2>
 

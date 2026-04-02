@@ -3,7 +3,7 @@ const Appointment = require("../models/Appointment");
 const User = require("../models/User");
 
 
-// 🔥 AUTO APPOINTMENT FUNCTION (ALIGNED WITH YOUR CHAT SYSTEM)
+// 🔥 AUTO APPOINTMENT FUNCTION (FIXED)
 const createAutoAppointment = async (studentId, severity, source) => {
   try {
     // 🚫 Prevent duplicate active appointments
@@ -12,16 +12,16 @@ const createAutoAppointment = async (studentId, severity, source) => {
       status: { $in: ["PENDING", "ONGOING"] }
     });
 
+    // 🔥 FIX: RETURN existing instead of null
     if (existing) {
-      console.log("ℹ️ Active appointment already exists, skipping");
-      return null;
+      console.log("ℹ️ Active appointment already exists, using existing");
+      return existing;
     }
 
     // 📅 Auto schedule (next day)
     const scheduleDate = new Date();
     scheduleDate.setDate(scheduleDate.getDate() + 1);
 
-    // ✅ MATCHES YOUR WORKING CHAT SYSTEM (STRING)
     const appointment = await Appointment.create({
       studentId,
       severity,
@@ -42,7 +42,7 @@ const createAutoAppointment = async (studentId, severity, source) => {
 };
 
 
-// 🧠 CREATE ASSESSMENT + AUTO APPOINTMENT (FIXED)
+// 🧠 CREATE ASSESSMENT + AUTO APPOINTMENT (FULL FIX)
 exports.createAssessment = async (req, res) => {
   try {
     console.log("🔥 createAssessment HIT");
@@ -65,19 +65,11 @@ exports.createAssessment = async (req, res) => {
     if (score >= 10) severity = "HIGH";
     else if (score >= 5) severity = "MEDIUM";
 
-    // ✅ SAVE ASSESSMENT
-    const newAssessment = await Assessment.create({
-      studentId,
-      answers,
-      score,
-      severity
-    });
-
-    // 🔥 CREATE APPOINTMENT FOR MEDIUM + HIGH
+    // 🔥 CREATE APPOINTMENT FIRST (IMPORTANT FIX)
     let appointment = null;
 
     if (severity === "HIGH" || severity === "MEDIUM") {
-      console.log(`🔥 ${severity} severity detected from assessment`);
+      console.log(`🔥 ${severity} severity detected`);
 
       appointment = await createAutoAppointment(
         studentId,
@@ -86,13 +78,22 @@ exports.createAssessment = async (req, res) => {
       );
     }
 
+    // 🔥 CREATE ASSESSMENT WITH APPOINTMENT LINK
+    const newAssessment = await Assessment.create({
+      studentId,
+      answers,
+      score,
+      severity,
+      appointmentId: appointment ? appointment._id : null
+    });
+
     res.json({
       success: true,
       message: "Assessment submitted",
       score,
       severity,
       assessment: newAssessment,
-      appointment
+      appointment // 🔥 ALWAYS returned now (even if existing)
     });
 
   } catch (error) {
