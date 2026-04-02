@@ -3,7 +3,46 @@ const Appointment = require("../models/Appointment");
 const User = require("../models/User");
 
 
-// 🧠 CREATE ASSESSMENT + AUTO APPOINTMENT (FINAL)
+// 🔥 AUTO APPOINTMENT FUNCTION (ALIGNED WITH YOUR CHAT SYSTEM)
+const createAutoAppointment = async (studentId, severity, source) => {
+  try {
+    // 🚫 Prevent duplicate active appointments
+    const existing = await Appointment.findOne({
+      studentId,
+      status: { $in: ["PENDING", "ONGOING"] }
+    });
+
+    if (existing) {
+      console.log("ℹ️ Active appointment already exists, skipping");
+      return null;
+    }
+
+    // 📅 Auto schedule (next day)
+    const scheduleDate = new Date();
+    scheduleDate.setDate(scheduleDate.getDate() + 1);
+
+    // ✅ MATCHES YOUR WORKING CHAT SYSTEM (STRING)
+    const appointment = await Appointment.create({
+      studentId,
+      severity,
+      assignedTo: "Guidance Counselor",
+      scheduleDate,
+      status: "PENDING",
+      source
+    });
+
+    console.log("✅ Appointment created:", appointment);
+
+    return appointment;
+
+  } catch (err) {
+    console.error("❌ Auto Appointment Error:", err);
+    return null;
+  }
+};
+
+
+// 🧠 CREATE ASSESSMENT + AUTO APPOINTMENT (FIXED)
 exports.createAssessment = async (req, res) => {
   try {
     console.log("🔥 createAssessment HIT");
@@ -34,41 +73,17 @@ exports.createAssessment = async (req, res) => {
       severity
     });
 
-    // 🔥 AUTO CREATE APPOINTMENT IF HIGH
-    if (severity === "HIGH") {
-      console.log("🔥 HIGH severity detected from assessment");
+    // 🔥 CREATE APPOINTMENT FOR MEDIUM + HIGH
+    let appointment = null;
 
-      // ❗ ONLY BLOCK ACTIVE APPOINTMENTS
-      const existing = await Appointment.findOne({
+    if (severity === "HIGH" || severity === "MEDIUM") {
+      console.log(`🔥 ${severity} severity detected from assessment`);
+
+      appointment = await createAutoAppointment(
         studentId,
-        status: { $in: ["PENDING", "ONGOING"] }
-      });
-
-      if (!existing) {
-        const counselor = await User.findOne({ role: "Guidance Counselor" });
-
-        if (!counselor) {
-          console.log("❌ No counselor found");
-        } else {
-          // 📅 schedule = next day
-          const scheduleDate = new Date();
-          scheduleDate.setDate(scheduleDate.getDate() + 1);
-
-          const newAppointment = await Appointment.create({
-            studentId,
-            severity,
-            assignedTo: "Guidance Counselor",
-            scheduleDate,
-            status: "PENDING",
-            source: "assessment" // optional but useful
-          });
-
-          console.log("✅ Appointment created from assessment:", newAppointment);
-        }
-
-      } else {
-        console.log("ℹ️ Active appointment already exists, skipping");
-      }
+        severity,
+        "assessment"
+      );
     }
 
     res.json({
@@ -76,7 +91,8 @@ exports.createAssessment = async (req, res) => {
       message: "Assessment submitted",
       score,
       severity,
-      assessment: newAssessment
+      assessment: newAssessment,
+      appointment
     });
 
   } catch (error) {
@@ -89,7 +105,7 @@ exports.createAssessment = async (req, res) => {
 };
 
 
-// 🔍 CHECK IF ASSESSMENT EXISTS
+// 🔍 CHECK IF ASSESSMENT EXISTS (UNCHANGED)
 exports.checkAssessment = async (req, res) => {
   try {
     const { studentId } = req.params;
