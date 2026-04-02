@@ -1,11 +1,14 @@
 const Assessment = require('../models/Assessment');
-const mongoose = require("mongoose");
+const Appointment = require("../models/Appointment");
+const User = require("../models/User");
 
 
-// 🧠 CREATE ASSESSMENT
+// 🧠 CREATE ASSESSMENT + AUTO APPOINTMENT (FINAL)
 exports.createAssessment = async (req, res) => {
   try {
-    const studentId = new mongoose.Types.ObjectId(req.user.id);
+    console.log("🔥 createAssessment HIT");
+
+    const studentId = req.user.id;
     const { answers } = req.body;
 
     if (!answers || !Array.isArray(answers)) {
@@ -20,18 +23,53 @@ exports.createAssessment = async (req, res) => {
 
     // ✅ DETERMINE SEVERITY
     let severity = "LOW";
+    if (score >= 10) severity = "HIGH";
+    else if (score >= 5) severity = "MEDIUM";
 
-    if (score <= 5) severity = "LOW";
-    else if (score <= 10) severity = "MEDIUM";
-    else severity = "HIGH";
-
-    // ✅ SAVE
+    // ✅ SAVE ASSESSMENT
     const newAssessment = await Assessment.create({
       studentId,
       answers,
       score,
       severity
     });
+
+    // 🔥 AUTO CREATE APPOINTMENT IF HIGH
+    if (severity === "HIGH") {
+      console.log("🔥 HIGH severity detected from assessment");
+
+      // ❗ ONLY BLOCK ACTIVE APPOINTMENTS
+      const existing = await Appointment.findOne({
+        studentId,
+        status: { $in: ["PENDING", "ONGOING"] }
+      });
+
+      if (!existing) {
+        const counselor = await User.findOne({ role: "Guidance Counselor" });
+
+        if (!counselor) {
+          console.log("❌ No counselor found");
+        } else {
+          // 📅 schedule = next day
+          const scheduleDate = new Date();
+          scheduleDate.setDate(scheduleDate.getDate() + 1);
+
+          const newAppointment = await Appointment.create({
+            studentId,
+            severity,
+            assignedTo: "Guidance Counselor",
+            scheduleDate,
+            status: "PENDING",
+            source: "assessment" // optional but useful
+          });
+
+          console.log("✅ Appointment created from assessment:", newAppointment);
+        }
+
+      } else {
+        console.log("ℹ️ Active appointment already exists, skipping");
+      }
+    }
 
     res.json({
       success: true,
@@ -42,6 +80,7 @@ exports.createAssessment = async (req, res) => {
     });
 
   } catch (error) {
+    console.error("❌ ERROR:", error);
     res.json({
       success: false,
       message: error.message
@@ -50,7 +89,7 @@ exports.createAssessment = async (req, res) => {
 };
 
 
-// 🔍 CHECK IF ASSESSMENT EXISTS (USED IN LOGIN)
+// 🔍 CHECK IF ASSESSMENT EXISTS
 exports.checkAssessment = async (req, res) => {
   try {
     const { studentId } = req.params;

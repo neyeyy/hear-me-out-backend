@@ -4,13 +4,18 @@ const router = express.Router();
 const { 
   createAppointment, 
   getAllAppointments, 
-  updateAppointmentStatus 
+  updateAppointmentStatus,
+  getMyAppointment // ✅ ADD
 } = require('../controllers/appointmentController');
 
 const authMiddleware = require('../middleware/authMiddleware');
 
 router.post('/', authMiddleware, createAppointment);
 router.get('/', authMiddleware, getAllAppointments);
-router.patch('/:id', authMiddleware, updateAppointmentStatus); // ✅ NEW
+
+// ✅ NEW ROUTE FOR STUDENT
+router.get('/my', authMiddleware, getMyAppointment);
+
+router.patch('/:id', authMiddleware, updateAppointmentStatus);
 
 module.exports = router;

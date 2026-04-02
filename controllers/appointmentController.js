@@ -2,7 +2,7 @@ const Appointment = require('../models/Appointment');
 const Assessment = require('../models/Assessment');
 
 
-// 🧠 CREATE ASSESSMENT (NEW)
+// 🧠 CREATE ASSESSMENT (NOW WITH AUTO APPOINTMENT)
 exports.createAssessment = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -35,6 +35,39 @@ exports.createAssessment = async (req, res) => {
       severity
     });
 
+    // 🔥 AUTO CREATE APPOINTMENT IF HIGH (MAIN FIX)
+    if (severity === "HIGH") {
+
+      // ❗ PREVENT DUPLICATE
+      const existing = await Appointment.findOne({
+        studentId,
+        status: { $in: ["PENDING", "ONGOING"] }
+      });
+
+      if (!existing) {
+
+        // 👤 ASSIGN
+        let assignedTo = "Guidance Counselor";
+
+        // 📅 SCHEDULE (HIGH = NEXT DAY)
+        const scheduleDate = new Date();
+        scheduleDate.setDate(scheduleDate.getDate() + 1);
+
+        const appointment = await Appointment.create({
+          studentId,
+          severity,
+          assignedTo,
+          scheduleDate,
+          status: "PENDING"
+        });
+
+        console.log("✅ Appointment auto-created from assessment:", appointment);
+
+      } else {
+        console.log("ℹ️ Existing appointment found, skipping creation");
+      }
+    }
+
     res.json({
       success: true,
       message: "Assessment submitted",
@@ -52,7 +85,7 @@ exports.createAssessment = async (req, res) => {
 };
 
 
-// 🔍 CHECK IF ASSESSMENT EXISTS (NEW)
+// 🔍 CHECK IF ASSESSMENT EXISTS
 exports.checkAssessment = async (req, res) => {
   try {
     const studentId = req.user.id;
@@ -73,12 +106,12 @@ exports.checkAssessment = async (req, res) => {
 };
 
 
-// 🚀 CREATE APPOINTMENT (AUTO + NO DUPLICATES)
+// 🚀 CREATE APPOINTMENT (USED BY CHAT TRIGGER)
 exports.createAppointment = async (req, res) => {
   try {
     const studentId = req.user.id;
 
-    // ❗ PREVENT DUPLICATE ACTIVE APPOINTMENT
+    // ❗ PREVENT DUPLICATE
     const existing = await Appointment.findOne({
       studentId,
       status: { $in: ["PENDING", "ONGOING"] }
@@ -148,7 +181,7 @@ exports.createAppointment = async (req, res) => {
 };
 
 
-// 📊 GET ALL APPOINTMENTS (PRIORITY SORT)
+// 📊 GET ALL APPOINTMENTS
 exports.getAllAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find()
@@ -188,18 +221,28 @@ exports.getAllAppointments = async (req, res) => {
 };
 
 
-// 🔄 UPDATE STATUS (IMPROVED)
+// 🔥 GET MY APPOINTMENT (FOR STUDENT DASHBOARD)
+exports.getMyAppointment = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+
+    const appointment = await Appointment.findOne({ studentId });
+
+    res.json(appointment);
+
+  } catch (error) {
+    res.status(500).json({
+      message: error.message
+    });
+  }
+};
+
+
+// 🔄 UPDATE STATUS
 exports.updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-
-    if (!status) {
-      return res.json({
-        success: false,
-        message: "Status is required"
-      });
-    }
 
     const allowedStatus = ["PENDING", "ONGOING", "COMPLETED"];
 
@@ -215,13 +258,6 @@ exports.updateAppointmentStatus = async (req, res) => {
       { status },
       { new: true }
     );
-
-    if (!appointment) {
-      return res.json({
-        success: false,
-        message: "Appointment not found"
-      });
-    }
 
     res.json({
       success: true,
