@@ -71,9 +71,7 @@ function CounselorDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("userId");
+    ["token","role","userId","name","email"].forEach(k => localStorage.removeItem(k));
     navigate("/");
   };
 

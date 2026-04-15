@@ -70,3 +70,31 @@ exports.login = async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 };
+
+// CHANGE PASSWORD
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    if (!currentPassword || !newPassword) {
+      return res.json({ success: false, message: "All fields are required" });
+    }
+    if (newPassword.length < 6) {
+      return res.json({ success: false, message: "New password must be at least 6 characters" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.json({ success: false, message: "User not found" });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.json({ success: false, message: "Current password is incorrect" });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ success: true, message: "Password changed successfully" });
+  } catch (error) {
+    res.json({ success: false, message: error.message });
+  }
+};

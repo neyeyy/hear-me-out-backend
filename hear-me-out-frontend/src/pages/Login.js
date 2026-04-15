@@ -36,6 +36,8 @@ export default function Login() {
       localStorage.setItem("token",  res.data.token);
       localStorage.setItem("role",   user.role);
       localStorage.setItem("userId", user.id);
+      localStorage.setItem("name",   user.name  || "");
+      localStorage.setItem("email",  user.email || "");
       if (user.role === "student") {
         try {
           const check = await API.get(`/assessment/check/${user.id}`);

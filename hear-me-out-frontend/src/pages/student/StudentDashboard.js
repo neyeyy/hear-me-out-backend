@@ -53,7 +53,15 @@ export default function StudentDashboard() {
   const [appointment, setAppt]    = useState(null);
   const [hovered, setHovered]     = useState(null);
   const [calKey, setCalKey]       = useState(0);
+  // profile change-password fields
+  const [curPw, setCurPw]         = useState("");
+  const [newPw, setNewPw]         = useState("");
+  const [conPw, setConPw]         = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
   const navigate = useNavigate();
+
+  const userName  = localStorage.getItem("name")  || "Student";
+  const userEmail = localStorage.getItem("email") || "";
 
   useEffect(() => {
     fetchAppointment();
@@ -85,10 +93,26 @@ export default function StudentDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("userId");
+    ["token","role","userId","name","email"].forEach(k => localStorage.removeItem(k));
     navigate("/");
+  };
+
+  const handleChangePassword = async () => {
+    if (!curPw || !newPw || !conPw) { alert("Please fill in all fields."); return; }
+    if (newPw !== conPw) { alert("New passwords do not match."); return; }
+    if (newPw.length < 6) { alert("New password must be at least 6 characters."); return; }
+    try {
+      setPwLoading(true);
+      const res = await API.patch("/auth/change-password", { currentPassword: curPw, newPassword: newPw });
+      if (res.data.success) {
+        alert("Password changed successfully!");
+        setCurPw(""); setNewPw(""); setConPw("");
+      } else {
+        alert(res.data.message || "Failed to change password.");
+      }
+    } catch (e) {
+      alert(e.response?.data?.message || "Error changing password.");
+    } finally { setPwLoading(false); }
   };
 
   const apptSt = appointment?.status ? STATUS_MAP[appointment.status] : null;
@@ -216,6 +240,9 @@ export default function StudentDashboard() {
               <button onClick={handleReset} style={p.trackBtn}>
                 + Track Mood
               </button>
+              <button onClick={() => setStep("profile")} style={p.profileBtn}>
+                👤 Profile
+              </button>
               <button onClick={handleLogout} style={p.logoutBtn}>
                 Sign out
               </button>
@@ -274,6 +301,89 @@ export default function StudentDashboard() {
               🔄 Track Again
             </button>
           </div>
+
+          {/* 🧄 Ad Banner */}
+          <div style={p.adCard}>
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/4/48/Cabanatuan_garlic_longganisa6.jpg"
+              alt="Cabanatuan Garlic Longganisa"
+              style={p.adImg}
+            />
+            <div style={p.adContent}>
+              <span style={p.adTag}>Featured Local Product 🇵🇭</span>
+              <h3 style={p.adTitle}>Cabanatuan Garlic Longganisa</h3>
+              <p style={p.adDesc}>
+                Nueva Ecija's pride — sweet, garlicky, and bursting with flavor.
+                The perfect breakfast treat to brighten your morning! 🧄🌟
+              </p>
+              <span style={p.adCta}>Order now at your local market →</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ────────────── PROFILE ────────────── */}
+      {step === "profile" && (
+        <div className="animate-fadeInUp" style={p.dashWrap}>
+          {/* Header */}
+          <div style={p.dashHeader}>
+            <div>
+              <h2 style={p.dashTitle}>My Profile</h2>
+              <p style={p.dashSub}>Manage your account details</p>
+            </div>
+            <button onClick={() => setStep("dashboard")} style={p.backToDashBtn}>
+              ← Dashboard
+            </button>
+          </div>
+
+          {/* Avatar + info card */}
+          <section style={p.section}>
+            <div style={p.profileCard}>
+              <div style={p.profileAvatar}>
+                {userName.charAt(0).toUpperCase()}
+              </div>
+              <div style={p.profileInfo}>
+                <p style={p.profileName}>{userName}</p>
+                <p style={p.profileEmail}>{userEmail}</p>
+                <span style={p.profileRole}>🎓 Student</span>
+              </div>
+            </div>
+          </section>
+
+          {/* Change password */}
+          <section style={p.section}>
+            <p style={p.sectionLabel}>CHANGE PASSWORD</p>
+            <div style={p.pwForm}>
+              {[
+                { label:"Current Password",  val:curPw, set:setCurPw },
+                { label:"New Password",       val:newPw, set:setNewPw },
+                { label:"Confirm New Password", val:conPw, set:setConPw },
+              ].map(({ label, val, set }) => (
+                <div key={label} style={p.pwGroup}>
+                  <label style={p.pwLabel}>{label}</label>
+                  <input
+                    type="password"
+                    value={val}
+                    onChange={e => set(e.target.value)}
+                    placeholder="••••••••"
+                    style={p.pwInput}
+                  />
+                </div>
+              ))}
+              <button
+                onClick={handleChangePassword}
+                disabled={pwLoading}
+                style={{ ...p.pwSaveBtn, opacity: pwLoading ? 0.7 : 1 }}
+              >
+                {pwLoading ? "Saving…" : "Save New Password"}
+              </button>
+            </div>
+          </section>
+
+          {/* Logout from profile too */}
+          <button onClick={handleLogout} style={p.profileLogoutBtn}>
+            🚪 Sign out of account
+          </button>
         </div>
       )}
     </div>
@@ -749,6 +859,194 @@ const p = {
     fontWeight: 600,
     cursor: "pointer",
     fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "0.01em",
+  },
+
+  /* ── Profile button (dashboard header) ── */
+  profileBtn: {
+    padding: "10px 16px",
+    background: "rgba(255,255,255,0.09)",
+    color: "rgba(255,255,255,0.75)",
+    border: "1px solid rgba(255,255,255,0.16)",
+    borderRadius: "99px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    flexShrink: 0,
+  },
+  backToDashBtn: {
+    padding: "10px 18px",
+    background: "rgba(255,255,255,0.07)",
+    color: "rgba(255,255,255,0.65)",
+    border: "1px solid rgba(255,255,255,0.14)",
+    borderRadius: "99px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    flexShrink: 0,
+  },
+
+  /* ── Profile card ── */
+  profileCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: "18px",
+    padding: "20px",
+    background: "rgba(255,255,255,0.05)",
+    borderRadius: "16px",
+    border: "1px solid rgba(255,255,255,0.1)",
+  },
+  profileAvatar: {
+    width: "64px",
+    height: "64px",
+    borderRadius: "50%",
+    background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "28px",
+    fontWeight: 700,
+    fontFamily: "'Poppins',sans-serif",
+    flexShrink: 0,
+    boxShadow: "0 6px 18px rgba(91,107,216,0.35)",
+  },
+  profileInfo: { display: "flex", flexDirection: "column", gap: "4px" },
+  profileName: {
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "#fff",
+    margin: 0,
+    fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "-0.2px",
+  },
+  profileEmail: {
+    fontSize: "14px",
+    color: "rgba(255,255,255,0.48)",
+    margin: 0,
+    fontFamily: "'Lato',sans-serif",
+  },
+  profileRole: {
+    display: "inline-block",
+    marginTop: "4px",
+    fontSize: "11px",
+    fontWeight: 600,
+    color: "#b4bcf5",
+    background: "rgba(91,107,216,0.25)",
+    padding: "3px 10px",
+    borderRadius: "99px",
+    border: "1px solid rgba(91,107,216,0.4)",
+    fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "0.04em",
+  },
+
+  /* ── Change password form ── */
+  pwForm: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+  },
+  pwGroup: { display: "flex", flexDirection: "column", gap: "6px" },
+  pwLabel: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: "rgba(255,255,255,0.42)",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  pwInput: {
+    padding: "13px 16px",
+    background: "rgba(255,255,255,0.06)",
+    border: "1.5px solid rgba(255,255,255,0.14)",
+    borderRadius: "12px",
+    color: "#fff",
+    fontSize: "15px",
+    fontFamily: "'Lato',sans-serif",
+    outline: "none",
+  },
+  pwSaveBtn: {
+    padding: "16px",
+    background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "12px",
+    fontSize: "15px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    boxShadow: "0 8px 22px rgba(91,107,216,0.35)",
+    letterSpacing: "0.02em",
+    marginTop: "4px",
+  },
+  profileLogoutBtn: {
+    width: "100%",
+    padding: "14px",
+    background: "rgba(248,113,113,0.1)",
+    color: "rgba(248,113,113,0.85)",
+    border: "1px solid rgba(248,113,113,0.25)",
+    borderRadius: "12px",
+    fontSize: "14px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    marginTop: "8px",
+    textAlign: "center",
+  },
+
+  /* ── Ad banner ── */
+  adCard: {
+    marginTop: "24px",
+    borderRadius: "18px",
+    overflow: "hidden",
+    border: "1px solid rgba(255,255,255,0.1)",
+    background: "rgba(255,255,255,0.04)",
+    display: "flex",
+    flexDirection: "column",
+  },
+  adImg: {
+    width: "100%",
+    height: "160px",
+    objectFit: "cover",
+    display: "block",
+  },
+  adContent: {
+    padding: "16px 18px 18px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+  },
+  adTag: {
+    fontSize: "10px",
+    fontWeight: 700,
+    color: "#F9A72B",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  adTitle: {
+    fontSize: "16px",
+    fontWeight: 700,
+    color: "#fff",
+    margin: 0,
+    fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "-0.2px",
+  },
+  adDesc: {
+    fontSize: "13px",
+    color: "rgba(255,255,255,0.55)",
+    margin: 0,
+    lineHeight: 1.6,
+    fontFamily: "'Lato',sans-serif",
+  },
+  adCta: {
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "#38C9B8",
+    fontFamily: "'Poppins',sans-serif",
+    marginTop: "4px",
     letterSpacing: "0.01em",
   },
 };
