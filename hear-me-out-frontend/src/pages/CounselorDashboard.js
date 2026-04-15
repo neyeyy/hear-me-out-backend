@@ -44,10 +44,7 @@ export default function CounselorDashboard() {
   const fetchStudents = async () => {
     try {
       const res = await API.get("/users/students");
-      const sorted = (res.data.students || []).sort(
-        (a, b) => (SEV_ORDER[a.severity] || 4) - (SEV_ORDER[b.severity] || 4)
-      );
-      setStudents(sorted);
+      setStudents(res.data.students || []);
     } catch (e) { console.log(e); }
   };
 
@@ -96,15 +93,41 @@ export default function CounselorDashboard() {
   const pending  = Object.values(appointments).filter(a => a.status === "PENDING").length;
   const done     = Object.values(appointments).filter(a => a.status === "DONE").length;
 
-  const highStudents = students.filter(s => s.severity === "HIGH");
+  const ongoingCount     = Object.values(appointments).filter(a => a.status === "ONGOING").length;
+  const completionRate   = (pending + done) > 0 ? Math.round(done / (pending + done) * 100) : 0;
 
-  const filteredStudents = students.filter(s => {
-    const q = search.toLowerCase();
-    const matchSearch = (s.name  || "").toLowerCase().includes(q) ||
-                        (s.email || "").toLowerCase().includes(q);
-    const matchSev = sevFilter === "ALL" || s.severity === sevFilter;
-    return matchSearch && matchSev;
-  });
+  // Students who still need counselor attention (HIGH or MEDIUM, appointment not DONE)
+  const priorityStudents = students
+    .filter(s =>
+      (s.severity === "HIGH" || s.severity === "MEDIUM") &&
+      (!appointments[s._id] || appointments[s._id].status !== "DONE")
+    )
+    .sort((a, b) => (SEV_ORDER[a.severity] || 4) - (SEV_ORDER[b.severity] || 4));
+
+  // Count HIGH-severity students with no resolved appointment
+  const needsActionCount = students.filter(s =>
+    s.severity === "HIGH" &&
+    (!appointments[s._id] || appointments[s._id].status !== "DONE")
+  ).length;
+
+  /* Sort key: active (PENDING/ONGOING) HIGH → MEDIUM → LOW → no-sev,
+     then completed/no-appt in the same severity order at the bottom */
+  const studentSortKey = (student) => {
+    const app = appointments[student._id];
+    const isActive = app && app.status !== "DONE"; // PENDING or ONGOING
+    const sevNum = SEV_ORDER[student.severity] || 4;
+    return isActive ? sevNum : sevNum + 10;
+  };
+
+  const filteredStudents = students
+    .filter(s => {
+      const q = search.toLowerCase();
+      const matchSearch = (s.name  || "").toLowerCase().includes(q) ||
+                          (s.email || "").toLowerCase().includes(q);
+      const matchSev = sevFilter === "ALL" || s.severity === sevFilter;
+      return matchSearch && matchSev;
+    })
+    .sort((a, b) => studentSortKey(a) - studentSortKey(b));
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -232,302 +255,72 @@ export default function CounselorDashboard() {
         {/* ══════════ OVERVIEW TAB ══════════ */}
         {tab === "overview" && (
           <>
-            {/* Stat cards */}
+            {/* Smart stat row */}
             <div style={s.statsGrid}>
-              <StatCard icon="👥" label="Total Students"  value={total}  accent="#5B6BD8" sub={`${high} need attention`} />
-              <StatCard icon="🚨" label="High Risk"       value={high}   accent="#F87171" sub="Immediate action needed" />
-              <StatCard icon="⚠️" label="Medium Risk"     value={medium} accent="#F9A72B" sub="Monitoring required" />
-              <StatCard icon="📅" label="Pending Sessions" value={pending} accent="#7C6FCD" sub={`${done} completed`} />
+              <StatCard icon="🚨" label="Needs Action"     value={needsActionCount} accent="#F87171" sub="HIGH risk, unresolved" />
+              <StatCard icon="🔄" label="Active Sessions"  value={ongoingCount}     accent="#5B6BD8" sub="Currently in progress" />
+              <StatCard icon="⏳" label="Awaiting Session" value={pending}          accent="#F9A72B" sub="Appointments pending" />
+              <StatCard icon="✅" label="Completion Rate"  value={`${completionRate}%`} accent="#38C9B8" sub={`${done} of ${pending + done} sessions done`} />
             </div>
 
-            <div style={s.twoCol}>
-              {/* High risk alerts */}
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background: "#F87171" }} />
-                    <h2 style={s.cardTitle}>Urgent Alerts</h2>
-                  </div>
-                  <span style={{ ...s.pill, background:"#FFF0EE", color:"#F87171" }}>
-                    {highStudents.length} student{highStudents.length !== 1 ? "s" : ""}
-                  </span>
+            {/* Priority Action List — the most important section */}
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background: "#F87171" }} />
+                  <h2 style={s.cardTitle}>Priority Action List</h2>
                 </div>
+                <span style={{ ...s.pill, background: priorityStudents.length > 0 ? "#FFF0EE" : "#E6FAF7", color: priorityStudents.length > 0 ? "#F87171" : "#38C9B8" }}>
+                  {priorityStudents.length > 0 ? `${priorityStudents.length} need attention` : "All clear ✓"}
+                </span>
+              </div>
 
-                {highStudents.length === 0 ? (
-                  <div style={s.emptyBox}>
-                    <span style={{ fontSize:"32px" }}>✅</span>
-                    <p style={s.emptyText}>No high-risk students right now</p>
-                  </div>
-                ) : (
-                  <div style={s.alertList}>
-                    {highStudents.map(st => (
-                      <div key={st._id} style={s.alertRow}>
-                        <div style={s.alertAva}>{st.name.charAt(0).toUpperCase()}</div>
+              {priorityStudents.length === 0 ? (
+                <div style={s.emptyBox}>
+                  <span style={{ fontSize: "40px" }}>🎉</span>
+                  <p style={{ ...s.emptyText, fontWeight: "600", color: "#38C9B8" }}>All high & medium risk students are addressed!</p>
+                  <p style={{ ...s.emptyText, fontSize: "13px" }}>Keep up the great work.</p>
+                </div>
+              ) : (
+                <div style={{ ...s.alertList, maxHeight: "260px", overflowY: "auto", paddingRight: "4px" }}>
+                  {priorityStudents.map(st => {
+                    const app   = appointments[st._id];
+                    const sev   = st.severity;
+                    const apptLabel = app
+                      ? app.status === "ONGOING" ? "🔄 Session ongoing"
+                      : app.status === "PENDING" ? "⏳ Appointment pending"
+                      : ""
+                      : "📋 No appointment scheduled";
+                    return (
+                      <div key={st._id} style={{
+                        ...s.alertRow,
+                        borderLeft: `4px solid ${SEV_COLOR[sev] || "#ccc"}`,
+                        background: sev === "HIGH" ? "#FFF5F5" : "#FFFBF0",
+                      }}>
+                        <div style={{
+                          ...s.alertAva,
+                          background: `linear-gradient(135deg,${SEV_COLOR[sev]}cc,${SEV_COLOR[sev]})`,
+                        }}>
+                          {(st.name || "?").charAt(0).toUpperCase()}
+                        </div>
                         <div style={s.alertBody}>
                           <div style={s.alertName}>{st.name}</div>
-                          <div style={s.alertMeta}>Needs immediate attention</div>
+                          <div style={{ ...s.alertMeta, color: SEV_COLOR[sev], fontWeight: "600" }}>{apptLabel}</div>
                         </div>
-                        <button onClick={() => openChat(st._id)} style={s.alertChatBtn}>
-                          💬 Chat
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Appointment summary */}
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background: "#7C6FCD" }} />
-                    <h2 style={s.cardTitle}>Appointments</h2>
-                  </div>
-                </div>
-
-                <div style={s.apptSummary}>
-                  {[
-                    { label:"Pending",   value: pending, color:"#F9A72B", bg:"#FFF8EC" },
-                    { label:"Ongoing",   value: Object.values(appointments).filter(a=>a.status==="ONGOING").length, color:"#5B6BD8", bg:"#EEF0FD" },
-                    { label:"Completed", value: done,    color:"#38C9B8", bg:"#E6FAF7" },
-                  ].map(row => (
-                    <div key={row.label} style={{ ...s.apptRow, background: row.bg }}>
-                      <span style={{ ...s.apptLabel, color: row.color }}>{row.label}</span>
-                      <span style={{ ...s.apptCount, color: row.color }}>{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={s.apptProgressWrap}>
-                  <p style={s.apptProgressLabel}>Completion rate</p>
-                  <div style={s.progressBar}>
-                    <div style={{
-                      ...s.progressFill,
-                      width: (pending + done) > 0
-                        ? `${Math.round(done / (pending + done) * 100)}%`
-                        : "0%",
-                      background: "linear-gradient(90deg,#38C9B8,#5B6BD8)",
-                    }} />
-                  </div>
-                  <p style={s.progressPct}>
-                    {(pending + done) > 0 ? Math.round(done / (pending + done) * 100) : 0}% complete
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Mood snapshot */}
-            {analytics?.moods?.length > 0 && (
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background: "#5B6BD8" }} />
-                    <h2 style={s.cardTitle}>Mood Snapshot</h2>
-                  </div>
-                  <span style={s.cardSub}>{totalMoods} entries total</span>
-                </div>
-                <div style={s.moodBars}>
-                  {analytics.moods.map(m => {
-                    const meta = MOOD_META[m._id] || { emoji:"❓", color:"#ccc" };
-                    const pct  = totalMoods > 0 ? Math.round(m.count / totalMoods * 100) : 0;
-                    return (
-                      <div key={m._id} style={s.moodBarRow}>
-                        <div style={s.moodBarLabel}>
-                          <span style={s.moodEmoji}>{meta.emoji}</span>
-                          <span style={s.moodName}>{m._id}</span>
-                        </div>
-                        <div style={s.moodBarTrack}>
-                          <div style={{ ...s.moodBarFill, width:`${pct}%`, background: meta.color }} />
-                        </div>
-                        <span style={s.moodBarPct}>{pct}%</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ══════════ STUDENTS TAB ══════════ */}
-        {tab === "students" && (
-          <div style={s.card}>
-            <div style={s.cardHeader}>
-              <div style={s.cardTitleRow}>
-                <span style={{ ...s.dot, background: "#5B6BD8" }} />
-                <h2 style={s.cardTitle}>All Students</h2>
-              </div>
-              <span style={{ ...s.pill, background:"#EEF0FD", color:"#5B6BD8" }}>
-                {filteredStudents.length} shown
-              </span>
-            </div>
-
-            {filteredStudents.length === 0 ? (
-              <div style={s.emptyBox}>
-                <span style={{ fontSize:"32px" }}>🔍</span>
-                <p style={s.emptyText}>No students match your filter</p>
-              </div>
-            ) : (
-              <div style={s.studentGrid}>
-                {filteredStudents.map(student => {
-                  const app = appointments[student._id];
-                  const sev = student.severity;
-                  return (
-                    <div key={student._id} style={s.studentCard}>
-                      {/* Left: avatar + info */}
-                      <div style={s.studentCardLeft}>
-                        <div style={{
-                          ...s.studentAva,
-                          background: `linear-gradient(135deg,${SEV_COLOR[sev] || "#5B6BD8"}99,${SEV_COLOR[sev] || "#7C6FCD"})`,
-                        }}>
-                          {student.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={s.studentCardName}>{student.name}</div>
-                          <div style={s.studentCardEmail}>{student.email}</div>
-                        </div>
-                      </div>
-
-                      {/* Risk badge */}
-                      {sev ? (
                         <span style={{
                           ...s.sevBadge,
                           background: SEV_BG[sev],
                           color: SEV_COLOR[sev],
                           border: `1.5px solid ${SEV_COLOR[sev]}55`,
+                          flexShrink: 0,
                         }}>
-                          {sev === "HIGH" ? "🔴" : sev === "MEDIUM" ? "🟡" : "🟢"} {sev}
+                          {sev === "HIGH" ? "🔴" : "🟡"} {sev}
                         </span>
-                      ) : (
-                        <span style={s.sevNone}>No assessment</span>
-                      )}
-
-                      {/* Appointment status */}
-                      <div style={s.apptStatus}>
-                        {app ? (
-                          app.status === "DONE"
-                            ? <span style={s.stDone}>✓ Completed</span>
-                            : <span style={{
-                                ...s.stPending,
-                                color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B",
-                                background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC",
-                              }}>{app.status}</span>
-                        ) : (
-                          <span style={s.stNone}>No appointment</span>
-                        )}
-                      </div>
-
-                      {/* Actions */}
-                      <div style={s.studentCardActions}>
-                        <button onClick={() => openChat(student._id)} style={s.btnChat}>
-                          💬 Chat
-                        </button>
-                        {app && app.status !== "DONE" && (
-                          <button onClick={() => handleComplete(app._id)} style={s.btnDone}>
-                            ✓ Done
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ══════════ ANALYTICS TAB ══════════ */}
-        {tab === "analytics" && (
-          <>
-            {/* Risk distribution */}
-            <div style={s.twoCol}>
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background:"#F87171" }} />
-                    <h2 style={s.cardTitle}>Risk Distribution</h2>
-                  </div>
-                  <span style={s.cardSub}>{total} students</span>
-                </div>
-                <div style={s.riskBars}>
-                  {[
-                    { label:"High Risk",   value: high,   color:"#F87171", bg:"#FFF0EE" },
-                    { label:"Medium Risk", value: medium, color:"#F9A72B", bg:"#FFF8EC" },
-                    { label:"Low Risk",    value: low,    color:"#38C9B8", bg:"#E6FAF7" },
-                  ].map(r => (
-                    <div key={r.label} style={s.riskBarItem}>
-                      <div style={s.riskBarHeader}>
-                        <span style={{ ...s.riskLabel, color: r.color }}>{r.label}</span>
-                        <span style={{ ...s.riskCount, color: r.color }}>{r.value}</span>
-                      </div>
-                      <div style={s.riskTrack}>
-                        <div style={{
-                          ...s.riskFill,
-                          width: total > 0 ? `${Math.round(r.value/total*100)}%` : "0%",
-                          background: r.color,
-                        }} />
-                      </div>
-                      <span style={s.riskPct}>
-                        {total > 0 ? Math.round(r.value/total*100) : 0}% of students
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Session stats */}
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background:"#7C6FCD" }} />
-                    <h2 style={s.cardTitle}>Session Overview</h2>
-                  </div>
-                </div>
-                <div style={s.sessionGrid}>
-                  {[
-                    { label:"Total Sessions", value: Object.keys(appointments).length, icon:"📋", color:"#5B6BD8" },
-                    { label:"Completed",       value: done,    icon:"✅", color:"#38C9B8" },
-                    { label:"Pending",         value: pending, icon:"⏳", color:"#F9A72B" },
-                    { label:"Ongoing",         value: Object.values(appointments).filter(a=>a.status==="ONGOING").length, icon:"🔄", color:"#7C6FCD" },
-                  ].map(item => (
-                    <div key={item.label} style={{ ...s.sessionCard, borderLeft:`4px solid ${item.color}` }}>
-                      <span style={s.sessionIcon}>{item.icon}</span>
-                      <div style={{ ...s.sessionValue, color: item.color }}>{item.value}</div>
-                      <div style={s.sessionLabel}>{item.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Mood breakdown */}
-            <div style={s.card}>
-              <div style={s.cardHeader}>
-                <div style={s.cardTitleRow}>
-                  <span style={{ ...s.dot, background:"#5B6BD8" }} />
-                  <h2 style={s.cardTitle}>Mood Breakdown</h2>
-                </div>
-                <span style={s.cardSub}>{totalMoods} mood entries recorded</span>
-              </div>
-
-              {totalMoods === 0 ? (
-                <div style={s.emptyBox}>
-                  <span style={{ fontSize:"32px" }}>📊</span>
-                  <p style={s.emptyText}>No mood data yet</p>
-                </div>
-              ) : (
-                <div style={s.moodFullGrid}>
-                  {(analytics?.moods || []).map(m => {
-                    const meta = MOOD_META[m._id] || { emoji:"❓", color:"#ccc" };
-                    const pct  = Math.round(m.count / totalMoods * 100);
-                    return (
-                      <div key={m._id} style={{ ...s.moodFullCard, borderTop:`4px solid ${meta.color}` }}>
-                        <span style={s.moodFullEmoji}>{meta.emoji}</span>
-                        <div style={{ ...s.moodFullValue, color: meta.color }}>{m.count}</div>
-                        <div style={s.moodFullLabel}>{m._id}</div>
-                        <div style={s.moodFullPct}>{pct}% of entries</div>
-                        <div style={s.moodFullTrack}>
-                          <div style={{ ...s.moodFullFill, width:`${pct}%`, background: meta.color }} />
+                        <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                          {app && app.status !== "DONE" && (
+                            <button onClick={() => handleComplete(app._id)} style={s.btnDone}>✓ Done</button>
+                          )}
+                          <button onClick={() => openChat(st._id)} style={s.alertChatBtn}>💬 Chat</button>
                         </div>
                       </div>
                     );
@@ -536,133 +329,446 @@ export default function CounselorDashboard() {
               )}
             </div>
 
-            {/* Students needing follow-up */}
-            {medium > 0 && (
+            {/* Two-col: Mood Climate + Session Pipeline */}
+            <div style={s.twoCol}>
+
+              {/* Mood Climate */}
               <div style={s.card}>
                 <div style={s.cardHeader}>
                   <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background:"#F9A72B" }} />
-                    <h2 style={s.cardTitle}>Medium Risk — Follow Up</h2>
+                    <span style={{ ...s.dot, background: "#5B6BD8" }} />
+                    <h2 style={s.cardTitle}>Mood Climate</h2>
                   </div>
-                  <span style={{ ...s.pill, background:"#FFF8EC", color:"#F9A72B" }}>{medium}</span>
+                  <span style={s.cardSub}>{totalMoods} entries</span>
                 </div>
-                <div style={s.alertList}>
-                  {students.filter(s => s.severity === "MEDIUM").map(st => {
-                    const app = appointments[st._id];
-                    return (
-                      <div key={st._id} style={{ ...s.alertRow, borderLeft:"3px solid #F9A72B" }}>
-                        <div style={{ ...s.alertAva, background:"linear-gradient(135deg,#F9A72B,#FFD166)" }}>
-                          {st.name.charAt(0).toUpperCase()}
+
+                {totalMoods === 0 ? (
+                  <div style={s.emptyBox}>
+                    <span style={{ fontSize: "28px" }}>📊</span>
+                    <p style={s.emptyText}>No mood data recorded yet</p>
+                  </div>
+                ) : (() => {
+                  const top  = (analytics?.moods || []).slice().sort((a, b) => b.count - a.count)[0];
+                  const meta = top ? (MOOD_META[top._id] || { emoji: "❓", color: "#ccc" }) : null;
+                  return (
+                    <>
+                      {top && meta && (
+                        <div style={{
+                          display: "flex", alignItems: "center", gap: "14px",
+                          padding: "14px 16px",
+                          background: meta.color + "18",
+                          borderRadius: "12px",
+                          marginBottom: "16px",
+                          border: `1.5px solid ${meta.color}33`,
+                        }}>
+                          <span style={{ fontSize: "38px", lineHeight: 1 }}>{meta.emoji}</span>
+                          <div>
+                            <div style={{ fontSize: "10px", fontWeight: "700", color: "#A8AECB", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins',sans-serif", marginBottom: "3px" }}>
+                              Most reported mood
+                            </div>
+                            <div style={{ fontSize: "19px", fontWeight: "700", color: meta.color, fontFamily: "'Poppins',sans-serif", lineHeight: 1.2 }}>
+                              {top._id}
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#A8AECB", marginTop: "2px" }}>
+                              {top.count} of {totalMoods} entries ({Math.round(top.count / totalMoods * 100)}%)
+                            </div>
+                          </div>
                         </div>
-                        <div style={s.alertBody}>
-                          <div style={s.alertName}>{st.name}</div>
-                          <div style={s.alertMeta}>{st.email}</div>
-                        </div>
-                        <div style={{ display:"flex", gap:"8px" }}>
-                          {app && app.status !== "DONE" && (
-                            <button onClick={() => handleComplete(app._id)} style={s.btnDone}>
-                              ✓ Done
-                            </button>
-                          )}
-                          <button onClick={() => openChat(st._id)} style={s.alertChatBtn}>
-                            💬 Chat
-                          </button>
-                        </div>
+                      )}
+                      <div style={s.moodBars}>
+                        {(analytics?.moods || []).map(m => {
+                          const mm  = MOOD_META[m._id] || { emoji: "❓", color: "#ccc" };
+                          const pct = Math.round(m.count / totalMoods * 100);
+                          return (
+                            <div key={m._id} style={s.moodBarRow}>
+                              <div style={s.moodBarLabel}>
+                                <span style={s.moodEmoji}>{mm.emoji}</span>
+                                <span style={s.moodName}>{m._id}</span>
+                              </div>
+                              <div style={s.moodBarTrack}>
+                                <div style={{ ...s.moodBarFill, width: `${pct}%`, background: mm.color }} />
+                              </div>
+                              <span style={s.moodBarPct}>{pct}%</span>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
+                    </>
+                  );
+                })()}
               </div>
-            )}
+
+              {/* Session Pipeline */}
+              <div style={s.card}>
+                <div style={s.cardHeader}>
+                  <div style={s.cardTitleRow}>
+                    <span style={{ ...s.dot, background: "#7C6FCD" }} />
+                    <h2 style={s.cardTitle}>Session Pipeline</h2>
+                  </div>
+                  <span style={s.cardSub}>{completionRate}% complete</span>
+                </div>
+
+                <div style={s.apptSummary}>
+                  {[
+                    { label: "⏳ Pending",   value: pending,      color: "#F9A72B", bg: "#FFF8EC", desc: "Waiting to start" },
+                    { label: "🔄 Ongoing",   value: ongoingCount, color: "#5B6BD8", bg: "#EEF0FD", desc: "In progress now" },
+                    { label: "✅ Completed", value: done,          color: "#38C9B8", bg: "#E6FAF7", desc: "Sessions closed" },
+                  ].map(row => (
+                    <div key={row.label} style={{ ...s.apptRow, background: row.bg, flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                        <span style={{ ...s.apptLabel, color: row.color }}>{row.label}</span>
+                        <span style={{ ...s.apptCount, color: row.color }}>{row.value}</span>
+                      </div>
+                      <span style={{ fontSize: "11px", color: row.color, opacity: 0.7, fontFamily: "'Lato',sans-serif" }}>{row.desc}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={s.apptProgressWrap}>
+                  <p style={s.apptProgressLabel}>Overall completion rate</p>
+                  <div style={s.progressBar}>
+                    <div style={{
+                      ...s.progressFill,
+                      width: `${completionRate}%`,
+                      background: "linear-gradient(90deg,#38C9B8,#5B6BD8)",
+                    }} />
+                  </div>
+                  <p style={s.progressPct}>{completionRate}% of sessions completed</p>
+                </div>
+
+              </div>
+            </div>
           </>
         )}
 
-        {/* ══════════ CHAT TAB ══════════ */}
-        {tab === "chat" && (
-          <div style={s.card}>
-            <div style={s.cardHeader}>
-              <div style={s.cardTitleRow}>
-                <span style={{ ...s.dot, background:"#5B6BD8" }} />
-                <h2 style={s.cardTitle}>Select a Student to Chat</h2>
-              </div>
-              <span style={{ ...s.pill, background:"#EEF0FD", color:"#5B6BD8" }}>
-                {students.length} students
-              </span>
+        {/* ══════════ STUDENTS TAB — full caseload registry ══════════ */}
+        {tab === "students" && (
+          <>
+            {/* Summary strip */}
+            <div style={{ display:"flex", gap:"10px", marginBottom:"16px", flexWrap:"wrap" }}>
+              {[
+                { label:"Total",         value: total,                                                                color:"#5B6BD8", bg:"#EEF0FD" },
+                { label:"High Risk",     value: high,                                                                color:"#F87171", bg:"#FFF0EE" },
+                { label:"Medium Risk",   value: medium,                                                              color:"#F9A72B", bg:"#FFF8EC" },
+                { label:"Low Risk",      value: low,                                                                 color:"#38C9B8", bg:"#E6FAF7" },
+                { label:"Unresolved",    value: students.filter(s => !appointments[s._id] || appointments[s._id].status !== "DONE").length, color:"#7C6FCD", bg:"#F3F0FF" },
+              ].map(c => (
+                <div key={c.label} style={{ display:"flex", alignItems:"center", gap:"7px", padding:"7px 14px", background:c.bg, borderRadius:"99px" }}>
+                  <span style={{ fontSize:"15px", fontWeight:"800", color:c.color, fontFamily:"'Poppins',sans-serif", lineHeight:1 }}>{c.value}</span>
+                  <span style={{ fontSize:"11px", color:c.color, fontWeight:"600", fontFamily:"'Poppins',sans-serif" }}>{c.label}</span>
+                </div>
+              ))}
             </div>
 
-            {students.length === 0 ? (
-              <div style={s.emptyBox}>
-                <span style={{ fontSize:"32px" }}>👥</span>
-                <p style={s.emptyText}>No students registered yet</p>
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background:"#5B6BD8" }} />
+                  <h2 style={s.cardTitle}>Student Roster</h2>
+                </div>
+                <span style={{ ...s.pill, background:"#EEF0FD", color:"#5B6BD8" }}>
+                  {filteredStudents.length} shown
+                </span>
               </div>
-            ) : (
-              <div style={s.chatPickerList}>
-                {students
-                  .filter(st => {
-                    const q = search.toLowerCase();
-                    return (st.name  || "").toLowerCase().includes(q) ||
-                           (st.email || "").toLowerCase().includes(q);
-                  })
-                  .map(st => {
-                    const sev = st.severity;
-                    const app = appointments[st._id];
+
+              {filteredStudents.length === 0 ? (
+                <div style={s.emptyBox}>
+                  <span style={{ fontSize:"32px" }}>🔍</span>
+                  <p style={s.emptyText}>No students match your filter</p>
+                </div>
+              ) : (
+                <>
+                  {[
+                    { sev:"HIGH",   label:"🔴 High Risk",    color:"#F87171" },
+                    { sev:"MEDIUM", label:"🟡 Medium Risk",   color:"#F9A72B" },
+                    { sev:"LOW",    label:"🟢 Low Risk",      color:"#38C9B8" },
+                    { sev:null,     label:"⚪ No Assessment", color:"#A8AECB" },
+                  ].map(({ sev, label, color }) => {
+                    const group = filteredStudents.filter(s => sev ? s.severity === sev : !s.severity);
+                    if (group.length === 0) return null;
                     return (
-                      <div key={st._id} style={s.chatPickerRow}>
-                        {/* Avatar */}
-                        <div style={{
-                          ...s.chatPickerAva,
-                          background: sev
-                            ? `linear-gradient(135deg,${SEV_COLOR[sev]}99,${SEV_COLOR[sev]})`
-                            : "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
-                        }}>
-                          {st.name.charAt(0).toUpperCase()}
+                      <div key={label} style={{ marginBottom:"22px" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"10px", paddingBottom:"8px", borderBottom:`2px solid ${color}22` }}>
+                          <span style={{ fontSize:"12px", fontWeight:"700", color, fontFamily:"'Poppins',sans-serif" }}>{label}</span>
+                          <span style={{ fontSize:"11px", color:"#A8AECB" }}>({group.length} student{group.length !== 1 ? "s" : ""})</span>
                         </div>
-
-                        {/* Info */}
-                        <div style={s.chatPickerInfo}>
-                          <div style={s.chatPickerName}>{st.name}</div>
-                          <div style={s.chatPickerEmail}>{st.email}</div>
+                        <div style={s.studentGrid}>
+                          {group.map(student => {
+                            const app    = appointments[student._id];
+                            const isDone = !app || app.status === "DONE";
+                            return (
+                              <div key={student._id} style={{ ...s.studentCard, opacity: isDone ? 0.58 : 1, borderLeft:`3px solid ${color}44` }}>
+                                <div style={s.studentCardLeft}>
+                                  <div style={{ ...s.studentAva, background: sev ? `linear-gradient(135deg,${color}99,${color})` : "linear-gradient(135deg,#A8AECB,#7B7F9E)" }}>
+                                    {(student.name || "?").charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div style={s.studentCardName}>{student.name}</div>
+                                    <div style={s.studentCardEmail}>{student.email}</div>
+                                  </div>
+                                </div>
+                                <div style={s.apptStatus}>
+                                  {app ? (
+                                    app.status === "DONE"
+                                      ? <span style={s.stDone}>✓ Session done</span>
+                                      : <span style={{ ...s.stPending, color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B", background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC" }}>{app.status}</span>
+                                  ) : <span style={s.stNone}>No appointment</span>}
+                                </div>
+                                <div style={s.studentCardActions}>
+                                  <button onClick={() => openChat(student._id)} style={s.btnChat}>💬 Chat</button>
+                                  {app && app.status !== "DONE" && (
+                                    <button onClick={() => handleComplete(app._id)} style={s.btnDone}>✓ Done</button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-
-                        {/* Risk + appt badges */}
-                        <div style={s.chatPickerMeta}>
-                          {sev && (
-                            <span style={{
-                              ...s.sevBadge,
-                              background: SEV_BG[sev],
-                              color: SEV_COLOR[sev],
-                              border: `1.5px solid ${SEV_COLOR[sev]}55`,
-                            }}>
-                              {sev === "HIGH" ? "🔴" : sev === "MEDIUM" ? "🟡" : "🟢"} {sev}
-                            </span>
-                          )}
-                          {app && (
-                            <span style={{
-                              fontSize:"11px", fontWeight:"600",
-                              fontFamily:"'Poppins',sans-serif",
-                              padding:"3px 9px", borderRadius:"99px",
-                              background: app.status==="DONE" ? "#E6FAF7" : "#FFF8EC",
-                              color: app.status==="DONE" ? "#38C9B8" : "#F9A72B",
-                            }}>
-                              {app.status === "DONE" ? "✓ Done" : app.status}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Chat button */}
-                        <button
-                          onClick={() => openChat(st._id)}
-                          style={s.chatPickerBtn}
-                        >
-                          💬 Open Chat
-                        </button>
                       </div>
                     );
                   })}
-              </div>
-            )}
-          </div>
+                </>
+              )}
+            </div>
+          </>
         )}
+
+        {/* ══════════ ANALYTICS TAB — aggregate data only, no actions ══════════ */}
+        {tab === "analytics" && (
+          <>
+            {/* Wellness headline */}
+            <div style={{ ...s.card, background:"linear-gradient(135deg,#1E2140 0%,#2D3166 100%)", marginBottom:"20px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:"16px" }}>
+                <div>
+                  <p style={{ fontSize:"11px", fontWeight:"700", textTransform:"uppercase", letterSpacing:"0.1em", color:"rgba(255,255,255,0.5)", margin:"0 0 6px", fontFamily:"'Poppins',sans-serif" }}>
+                    Program Wellness Report
+                  </p>
+                  <p style={{ fontSize:"28px", fontWeight:"800", color:"#fff", margin:0, fontFamily:"'Poppins',sans-serif", lineHeight:1 }}>
+                    {total > 0 ? Math.round(low / total * 100) : 0}% Low Risk
+                  </p>
+                  <p style={{ fontSize:"13px", color:"rgba(255,255,255,0.55)", margin:"6px 0 0", fontFamily:"'Lato',sans-serif" }}>
+                    {low} of {total} students in healthy range · {high > 0 ? `${high} need immediate attention` : "no urgent cases"}
+                  </p>
+                </div>
+                <div style={{ display:"flex", gap:"24px" }}>
+                  {[
+                    { label:"Students",    value: total },
+                    { label:"Sessions",    value: Object.keys(appointments).length },
+                    { label:"Mood Entries",value: totalMoods },
+                  ].map(item => (
+                    <div key={item.label} style={{ textAlign:"center" }}>
+                      <div style={{ fontSize:"26px", fontWeight:"800", color:"#fff", fontFamily:"'Poppins',sans-serif", lineHeight:1 }}>{item.value}</div>
+                      <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.5)", fontWeight:"600", marginTop:"4px", fontFamily:"'Poppins',sans-serif" }}>{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Risk distribution + Session statistics */}
+            <div style={s.twoCol}>
+              <div style={s.card}>
+                <div style={s.cardHeader}>
+                  <div style={s.cardTitleRow}>
+                    <span style={{ ...s.dot, background:"#F87171" }} />
+                    <h2 style={s.cardTitle}>Risk Distribution</h2>
+                  </div>
+                  <span style={s.cardSub}>{total} students total</span>
+                </div>
+                <div style={s.riskBars}>
+                  {[
+                    { label:"High Risk",   value:high,   color:"#F87171" },
+                    { label:"Medium Risk", value:medium, color:"#F9A72B" },
+                    { label:"Low Risk",    value:low,    color:"#38C9B8" },
+                  ].map(r => (
+                    <div key={r.label} style={s.riskBarItem}>
+                      <div style={s.riskBarHeader}>
+                        <span style={{ ...s.riskLabel, color:r.color }}>{r.label}</span>
+                        <span style={{ ...s.riskCount, color:r.color }}>{r.value} student{r.value !== 1 ? "s" : ""}</span>
+                      </div>
+                      <div style={s.riskTrack}>
+                        <div style={{ ...s.riskFill, width: total > 0 ? `${Math.round(r.value/total*100)}%` : "0%", background:r.color }} />
+                      </div>
+                      <span style={s.riskPct}>{total > 0 ? Math.round(r.value/total*100) : 0}% of all students</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={s.card}>
+                <div style={s.cardHeader}>
+                  <div style={s.cardTitleRow}>
+                    <span style={{ ...s.dot, background:"#7C6FCD" }} />
+                    <h2 style={s.cardTitle}>Session Statistics</h2>
+                  </div>
+                  <span style={s.cardSub}>{completionRate}% completion rate</span>
+                </div>
+                <div style={s.sessionGrid}>
+                  {[
+                    { label:"Total",     value:Object.keys(appointments).length, icon:"📋", color:"#5B6BD8" },
+                    { label:"Completed", value:done,         icon:"✅", color:"#38C9B8" },
+                    { label:"Pending",   value:pending,      icon:"⏳", color:"#F9A72B" },
+                    { label:"Ongoing",   value:ongoingCount, icon:"🔄", color:"#7C6FCD" },
+                  ].map(item => (
+                    <div key={item.label} style={{ ...s.sessionCard, borderLeft:`4px solid ${item.color}` }}>
+                      <span style={s.sessionIcon}>{item.icon}</span>
+                      <div style={{ ...s.sessionValue, color:item.color }}>{item.value}</div>
+                      <div style={s.sessionLabel}>{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop:"16px", paddingTop:"14px", borderTop:"1px solid #F0F2F8" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"6px" }}>
+                    <span style={{ fontSize:"12px", color:"#A8AECB", fontFamily:"'Poppins',sans-serif" }}>Session completion rate</span>
+                    <span style={{ fontSize:"12px", fontWeight:"700", color:"#38C9B8", fontFamily:"'Poppins',sans-serif" }}>{completionRate}%</span>
+                  </div>
+                  <div style={s.progressBar}>
+                    <div style={{ ...s.progressFill, width:`${completionRate}%`, background:"linear-gradient(90deg,#38C9B8,#5B6BD8)" }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Mood breakdown — full detail */}
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background:"#5B6BD8" }} />
+                  <h2 style={s.cardTitle}>Mood Frequency Breakdown</h2>
+                </div>
+                <span style={s.cardSub}>{totalMoods} total mood entries</span>
+              </div>
+              {totalMoods === 0 ? (
+                <div style={s.emptyBox}>
+                  <span style={{ fontSize:"32px" }}>📊</span>
+                  <p style={s.emptyText}>No mood data recorded yet</p>
+                </div>
+              ) : (
+                <div style={s.moodFullGrid}>
+                  {(analytics?.moods || []).sort((a,b) => b.count - a.count).map(m => {
+                    const meta = MOOD_META[m._id] || { emoji:"❓", color:"#ccc" };
+                    const pct  = Math.round(m.count / totalMoods * 100);
+                    return (
+                      <div key={m._id} style={{ ...s.moodFullCard, borderTop:`4px solid ${meta.color}` }}>
+                        <span style={s.moodFullEmoji}>{meta.emoji}</span>
+                        <div style={{ ...s.moodFullValue, color:meta.color }}>{m.count}</div>
+                        <div style={s.moodFullLabel}>{m._id}</div>
+                        <div style={s.moodFullPct}>{pct}% of entries</div>
+                        <div style={s.moodFullTrack}>
+                          <div style={{ ...s.moodFullFill, width:`${pct}%`, background:meta.color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ══════════ CHAT TAB — messaging inbox, grouped by urgency ══════════ */}
+        {tab === "chat" && (() => {
+          const q            = search.toLowerCase();
+          const urgentIds    = new Set(students.filter(st => st.severity === "HIGH" && (!appointments[st._id] || appointments[st._id].status !== "DONE")).map(st => String(st._id)));
+          const activeIds    = new Set(students.filter(st => appointments[st._id]?.status === "ONGOING" && !urgentIds.has(String(st._id))).map(st => String(st._id)));
+          const allSearched  = students.filter(st => (st.name||"").toLowerCase().includes(q) || (st.email||"").toLowerCase().includes(q));
+
+          const sections = [
+            {
+              key:   "urgent",
+              label: "🚨 Needs Immediate Attention",
+              color: "#F87171",
+              bg:    "#FFF0EE",
+              list:  allSearched.filter(st => urgentIds.has(String(st._id))),
+              hint:  "HIGH risk — no resolved appointment",
+            },
+            {
+              key:   "active",
+              label: "🔄 Active Sessions",
+              color: "#5B6BD8",
+              bg:    "#EEF0FD",
+              list:  allSearched.filter(st => activeIds.has(String(st._id))),
+              hint:  "Session currently ongoing",
+            },
+            {
+              key:   "others",
+              label: "💬 All Students",
+              color: "#7B7F9E",
+              bg:    "#F3F4F8",
+              list:  allSearched.filter(st => !urgentIds.has(String(st._id)) && !activeIds.has(String(st._id))).sort((a,b) => studentSortKey(a) - studentSortKey(b)),
+              hint:  null,
+            },
+          ];
+
+          return (
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background:"#5B6BD8" }} />
+                  <h2 style={s.cardTitle}>Message a Student</h2>
+                </div>
+                <span style={{ ...s.pill, background:"#EEF0FD", color:"#5B6BD8" }}>{students.length} students</span>
+              </div>
+
+              {students.length === 0 ? (
+                <div style={s.emptyBox}>
+                  <span style={{ fontSize:"32px" }}>👥</span>
+                  <p style={s.emptyText}>No students registered yet</p>
+                </div>
+              ) : (
+                <>
+                  {sections.map(sec => {
+                    if (sec.list.length === 0 && sec.key !== "others") return null;
+                    return (
+                      <div key={sec.key} style={{ marginBottom:"22px" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:"8px", padding:"7px 12px", background:sec.bg, borderRadius:"8px", borderLeft:`3px solid ${sec.color}`, marginBottom:"10px" }}>
+                          <span style={{ fontSize:"12px", fontWeight:"700", color:sec.color, fontFamily:"'Poppins',sans-serif" }}>{sec.label}</span>
+                          {sec.key !== "others" && <span style={{ fontSize:"11px", color:sec.color, opacity:0.7 }}>({sec.list.length})</span>}
+                          {sec.hint && <span style={{ fontSize:"11px", color:sec.color, opacity:0.55, marginLeft:"auto", fontFamily:"'Lato',sans-serif" }}>{sec.hint}</span>}
+                        </div>
+
+                        {sec.list.length === 0 ? (
+                          <p style={{ fontSize:"13px", color:"#A8AECB", paddingLeft:"12px", margin:0, fontFamily:"'Lato',sans-serif" }}>None right now</p>
+                        ) : (
+                          <div style={s.chatPickerList}>
+                            {sec.list.map(st => {
+                              const sev = st.severity;
+                              const app = appointments[st._id];
+                              return (
+                                <div key={st._id} style={s.chatPickerRow}>
+                                  <div style={{ ...s.chatPickerAva, background: sev ? `linear-gradient(135deg,${SEV_COLOR[sev]}99,${SEV_COLOR[sev]})` : "linear-gradient(135deg,#5B6BD8,#7C6FCD)" }}>
+                                    {(st.name||"?").charAt(0).toUpperCase()}
+                                  </div>
+                                  <div style={s.chatPickerInfo}>
+                                    <div style={s.chatPickerName}>{st.name}</div>
+                                    <div style={s.chatPickerEmail}>{st.email}</div>
+                                  </div>
+                                  <div style={s.chatPickerMeta}>
+                                    {sev && (
+                                      <span style={{ ...s.sevBadge, background:SEV_BG[sev], color:SEV_COLOR[sev], border:`1.5px solid ${SEV_COLOR[sev]}55` }}>
+                                        {sev === "HIGH" ? "🔴" : sev === "MEDIUM" ? "🟡" : "🟢"} {sev}
+                                      </span>
+                                    )}
+                                    {app && (
+                                      <span style={{ fontSize:"11px", fontWeight:"600", fontFamily:"'Poppins',sans-serif", padding:"3px 9px", borderRadius:"99px", background: app.status==="DONE" ? "#E6FAF7" : app.status==="ONGOING" ? "#EEF0FD" : "#FFF8EC", color: app.status==="DONE" ? "#38C9B8" : app.status==="ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
+                                        {app.status === "DONE" ? "✓ Done" : app.status}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button onClick={() => openChat(st._id)} style={s.chatPickerBtn}>💬 Open Chat</button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          );
+        })()}
       </main>
     </div>
   );
