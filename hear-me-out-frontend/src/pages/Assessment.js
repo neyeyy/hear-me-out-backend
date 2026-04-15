@@ -230,6 +230,8 @@ function Assessment() {
 const s = {
   page: {
     minHeight: "100vh",
+    width: "100%",
+    flex: 1,
     display: "flex",
     justifyContent: "center",
     alignItems: "center",

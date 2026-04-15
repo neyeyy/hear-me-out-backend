@@ -104,8 +104,10 @@ function Chat() {
         {/* Header */}
         <div style={s.header}>
           <div style={s.headerLeft}>
-            {isStudent && (
+            {isStudent ? (
               <button onClick={() => navigate("/student", { state: { step: "dashboard" } })} style={s.backBtn}>←</button>
+            ) : (
+              <button onClick={() => navigate("/admin")} style={s.backBtn}>←</button>
             )}
             <div style={s.avatar}>
               {isStudent ? "👨‍⚕️" : "🎓"}

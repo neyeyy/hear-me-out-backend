@@ -10,7 +10,7 @@ const MOODS = [
     label: "Happy",
     gradient: "linear-gradient(135deg,#4ECDC4 0%,#44A08D 100%)",
     glow: "rgba(78,205,196,0.4)",
-    quote: "You're radiating great energy today. Keep that smile going 🌟",
+    quote: "Your joy matters — let it fill every corner of your day. You deserve every bit of this happiness. Keep shining, the world is brighter with you in it! 🌟",
   },
   {
     key: "SAD",
@@ -18,7 +18,7 @@ const MOODS = [
     label: "Sad",
     gradient: "linear-gradient(135deg,#6C63FF 0%,#9B59B6 100%)",
     glow: "rgba(108,99,255,0.4)",
-    quote: "It's okay to feel sad. Your feelings are valid 💙 Better days are ahead.",
+    quote: "It takes real strength to sit with hard feelings. You are not alone in this — every storm runs out of rain. Reaching out today is already an act of courage. 💙",
   },
   {
     key: "STRESSED",
@@ -26,7 +26,7 @@ const MOODS = [
     label: "Stressed",
     gradient: "linear-gradient(135deg,#F7971E 0%,#FFD200 100%)",
     glow: "rgba(247,151,30,0.4)",
-    quote: "One breath at a time. You're handling more than you know 🌿",
+    quote: "You have survived 100% of your hardest days — that record stays perfect. Take one slow breath. You don't have to solve everything right now. You are enough. 🌿",
   },
   {
     key: "ANXIOUS",
@@ -34,7 +34,7 @@ const MOODS = [
     label: "Anxious",
     gradient: "linear-gradient(135deg,#FF6B6B 0%,#FF8E53 100%)",
     glow: "rgba(255,107,107,0.4)",
-    quote: "You are safe right now. This feeling will pass 🌈",
+    quote: "Right here, right now — you are safe. Anxiety is your mind trying to protect you, not predict the future. This wave will pass, and you will still be standing. 🌈",
   },
 ];
 
@@ -127,21 +127,11 @@ export default function StudentDashboard() {
       {step === "pick" && (
         <div className="animate-fadeInUp" style={p.wrap}>
 
-          {/* Header */}
+          {/* Header — date only, no buttons */}
           <div style={p.topBar}>
-            <div>
-              <p style={p.topDate}>
-                {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
-              </p>
-            </div>
-            <div style={{ display:"flex", gap:"8px" }}>
-              <button onClick={() => { setCalKey(k=>k+1); setStep("dashboard"); }} style={p.dashBtn}>
-                Dashboard →
-              </button>
-              <button onClick={handleLogout} style={p.logoutBtn}>
-                Sign out
-              </button>
-            </div>
+            <p style={p.topDate}>
+              {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
+            </p>
           </div>
 
           {/* Hero */}
@@ -188,27 +178,36 @@ export default function StudentDashboard() {
         <div style={{ ...p.notePage, background: selected.gradient }}>
           <div style={p.noteBlob1} />
           <div style={p.noteBlob2} />
-
           <button onClick={() => setStep("pick")} style={p.backBtn}>← Back</button>
 
           <div style={p.noteInner}>
-            {/* Emoji ring */}
+            {/* Emoji + mood label */}
             <div style={p.emojiRing}>
               <span style={p.bigEmoji}>{selected.emoji}</span>
             </div>
-            <h2 style={p.noteMoodTitle}>Feeling {selected.label}</h2>
+            <p style={p.noteMoodBadge}>You're feeling</p>
+            <h2 style={p.noteMoodTitle}>{selected.label}</h2>
 
-            {/* Motivational quote — hero element */}
-            <div style={p.quoteBox}>
-              <span style={p.quoteGlyph}>"</span>
-              <p style={p.quoteText}>{selected.quote}</p>
-              <span style={p.quoteGlyphClose}>"</span>
+            {/* ── Motivational affirmation card ── */}
+            <div style={p.affirmCard}>
+              <div style={p.affirmTopRow}>
+                <span style={p.affirmIcon}>💬</span>
+                <span style={p.affirmTag}>A message for you</span>
+              </div>
+              <p style={p.affirmQuote}>{selected.quote}</p>
+              <div style={p.affirmDivider} />
+              <p style={p.affirmSub}>
+                Your feelings are valid. You're doing better than you think. 🌱
+              </p>
             </div>
 
-            {/* Note */}
+            {/* ── Private note input ── */}
             <div style={p.noteGroup}>
-              <p style={p.noteGroupTitle}>✏️ Add a note <span style={p.noteOptional}>(optional)</span></p>
-              <p style={p.noteGroupSub}>Share what's on your mind — it stays private</p>
+              <div style={p.noteGroupHeader}>
+                <p style={p.noteGroupTitle}>📝 Add a note</p>
+                <span style={p.notePrivacyBadge}>🔒 Private</span>
+              </div>
+              <p style={p.noteGroupSub}>Share what's on your mind — only you can see this</p>
               <div style={p.textareaWrap}>
                 <textarea
                   placeholder="e.g. I had a tough day, but I kept going…"
@@ -237,14 +236,11 @@ export default function StudentDashboard() {
               <p style={p.dashSub}>Track your mood and appointments</p>
             </div>
             <div style={{ display:"flex", gap:"8px", flexShrink:0, marginTop:"4px" }}>
-              <button onClick={handleReset} style={p.trackBtn}>
-                + Track Mood
+              <button onClick={() => navigate("/chat")} style={p.trackBtn}>
+                💬 Chat Counselor
               </button>
               <button onClick={() => setStep("profile")} style={p.profileBtn}>
                 👤 Profile
-              </button>
-              <button onClick={handleLogout} style={p.logoutBtn}>
-                Sign out
               </button>
             </div>
           </div>
@@ -294,11 +290,11 @@ export default function StudentDashboard() {
 
           {/* Action buttons */}
           <div style={p.btnRow}>
-            <button onClick={() => navigate("/chat")} style={p.chatBtn}>
-              💬 Chat with Counselor
+            <button onClick={handleReset} style={p.chatBtn}>
+              ➕ Track Mood
             </button>
-            <button onClick={handleReset} style={p.trackBtnSm}>
-              🔄 Track Again
+            <button onClick={() => navigate("/chat")} style={p.trackBtnSm}>
+              💬 Chat Counselor
             </button>
           </div>
 
@@ -394,6 +390,8 @@ export default function StudentDashboard() {
 const p = {
   page: {
     minHeight: "100vh",
+    width: "100%",
+    flex: 1,
     display: "flex",
     justifyContent: "center",
     alignItems: "flex-start",
@@ -596,76 +594,110 @@ const p = {
     boxShadow: "0 10px 32px rgba(0,0,0,0.14)",
   },
   bigEmoji: { fontSize: "52px" },
+  noteMoodBadge: {
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "rgba(255,255,255,0.65)",
+    margin: "0 0 4px",
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    fontFamily: "'Poppins',sans-serif",
+  },
   noteMoodTitle: {
-    fontSize: "28px",
+    fontSize: "32px",
     fontWeight: 700,
     color: "#fff",
-    margin: "0 0 24px",
-    letterSpacing: "-0.4px",
+    margin: "0 0 22px",
+    letterSpacing: "-0.5px",
     fontFamily: "'Poppins',sans-serif",
-    textShadow: "0 2px 8px rgba(0,0,0,0.15)",
+    textShadow: "0 2px 12px rgba(0,0,0,0.2)",
   },
-  quoteBox: {
-    background: "rgba(0,0,0,0.18)",
+
+  /* ── Affirmation card ── */
+  affirmCard: {
+    width: "100%",
+    background: "rgba(0,0,0,0.22)",
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: "20px",
-    padding: "22px 24px",
-    marginBottom: "28px",
-    width: "100%",
-    backdropFilter: "blur(4px)",
+    padding: "22px 22px 18px",
+    marginBottom: "24px",
+    backdropFilter: "blur(6px)",
   },
-  quoteGlyph: {
-    fontSize: "48px",
-    color: "rgba(255,255,255,0.35)",
-    display: "block",
-    lineHeight: "32px",
-    marginBottom: "8px",
-    fontFamily: "Georgia, serif",
-    fontStyle: "normal",
+  affirmTopRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginBottom: "14px",
   },
-  quoteGlyphClose: {
-    fontSize: "48px",
-    color: "rgba(255,255,255,0.35)",
-    display: "block",
-    lineHeight: "20px",
-    marginTop: "10px",
-    textAlign: "right",
-    fontFamily: "Georgia, serif",
-    fontStyle: "normal",
+  affirmIcon: {
+    fontSize: "20px",
+    lineHeight: 1,
   },
-  quoteText: {
-    fontSize: "17px",
+  affirmTag: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: "rgba(255,255,255,0.5)",
+    textTransform: "uppercase",
+    letterSpacing: "0.09em",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  affirmQuote: {
+    fontSize: "16px",
     fontWeight: 400,
     color: "#fff",
-    fontStyle: "italic",
-    lineHeight: 1.7,
-    margin: 0,
+    lineHeight: 1.75,
+    margin: "0 0 16px",
     fontFamily: "'Lato',sans-serif",
-    textShadow: "0 1px 4px rgba(0,0,0,0.12)",
+    fontStyle: "italic",
+    textShadow: "0 1px 6px rgba(0,0,0,0.14)",
   },
+  affirmDivider: {
+    height: "1px",
+    background: "rgba(255,255,255,0.15)",
+    marginBottom: "14px",
+  },
+  affirmSub: {
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "rgba(255,255,255,0.7)",
+    margin: 0,
+    fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "0.01em",
+  },
+
   noteGroup: {
     width: "100%",
     marginBottom: "22px",
   },
+  noteGroupHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "4px",
+  },
   noteGroupTitle: {
-    fontSize: "16px",
+    fontSize: "15px",
     fontWeight: 600,
     color: "#fff",
-    margin: "0 0 4px",
-    letterSpacing: "-0.1px",
+    margin: 0,
     fontFamily: "'Poppins',sans-serif",
   },
-  noteOptional: {
-    fontSize: "13px",
-    fontWeight: 400,
+  notePrivacyBadge: {
+    fontSize: "11px",
+    fontWeight: 600,
     color: "rgba(255,255,255,0.55)",
-    fontFamily: "'Lato',sans-serif",
+    background: "rgba(255,255,255,0.1)",
+    padding: "3px 9px",
+    borderRadius: "99px",
+    border: "1px solid rgba(255,255,255,0.16)",
+    fontFamily: "'Poppins',sans-serif",
   },
   noteGroupSub: {
-    fontSize: "14px",
+    fontSize: "13px",
     fontWeight: 400,
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(255,255,255,0.52)",
     margin: "0 0 12px",
+    fontFamily: "'Lato',sans-serif",
   },
   textareaWrap: {
     position: "relative",
