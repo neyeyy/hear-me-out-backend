@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Hear Me Out",
+    "slug": "hear-me-out",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#6C63FF"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#6C63FF"
+      },
+      "package": "com.hearmeout.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.hearmeout.app",
+      "supportsTablet": false
+    }
+  }
+}

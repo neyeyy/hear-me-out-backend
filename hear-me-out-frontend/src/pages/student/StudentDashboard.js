@@ -1,286 +1,754 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import API from "../../services/api";
 import MoodCalendar from "../../components/MoodCalendar";
 
-const quotes = {
-  HAPPY: "Keep shining, you're doing great! 😊",
-  SAD: "It's okay to feel sad. Better days are coming 💙",
-  STRESSED: "Take a deep breath. One step at a time 🌿",
-  ANXIOUS: "You are safe. This feeling will pass 🌈"
+const MOODS = [
+  {
+    key: "HAPPY",
+    emoji: "😊",
+    label: "Happy",
+    gradient: "linear-gradient(135deg,#4ECDC4 0%,#44A08D 100%)",
+    glow: "rgba(78,205,196,0.4)",
+    quote: "You're radiating great energy today. Keep that smile going 🌟",
+  },
+  {
+    key: "SAD",
+    emoji: "😢",
+    label: "Sad",
+    gradient: "linear-gradient(135deg,#6C63FF 0%,#9B59B6 100%)",
+    glow: "rgba(108,99,255,0.4)",
+    quote: "It's okay to feel sad. Your feelings are valid 💙 Better days are ahead.",
+  },
+  {
+    key: "STRESSED",
+    emoji: "😫",
+    label: "Stressed",
+    gradient: "linear-gradient(135deg,#F7971E 0%,#FFD200 100%)",
+    glow: "rgba(247,151,30,0.4)",
+    quote: "One breath at a time. You're handling more than you know 🌿",
+  },
+  {
+    key: "ANXIOUS",
+    emoji: "😰",
+    label: "Anxious",
+    gradient: "linear-gradient(135deg,#FF6B6B 0%,#FF8E53 100%)",
+    glow: "rgba(255,107,107,0.4)",
+    quote: "You are safe right now. This feeling will pass 🌈",
+  },
+];
+
+const STATUS_MAP = {
+  PENDING: { label: "Pending",   color: "#F7971E", bg: "rgba(247,151,30,0.1)",  border: "rgba(247,151,30,0.3)" },
+  ONGOING: { label: "Ongoing",   color: "#6C63FF", bg: "rgba(108,99,255,0.1)", border: "rgba(108,99,255,0.3)" },
+  DONE:    { label: "Completed", color: "#4ECDC4", bg: "rgba(78,205,196,0.1)",  border: "rgba(78,205,196,0.3)" },
 };
 
-const moodStyles = {
-  HAPPY: { bg: "#fff9c4", border: "#fdd835" },
-  SAD: { bg: "#e3f2fd", border: "#42a5f5" },
-  STRESSED: { bg: "#ffe0b2", border: "#fb8c00" },
-  ANXIOUS: { bg: "#ede7f6", border: "#7e57c2" }
-};
-
-function StudentDashboard() {
-  const [selectedMood, setSelectedMood] = useState("");
-  const [note, setNote] = useState("");
-  const [quote, setQuote] = useState("");
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [showPopup, setShowPopup] = useState(false);
-  const [appointment, setAppointment] = useState(null);
-
+// step: "pick" | "note" | "dashboard"
+export default function StudentDashboard() {
+  const location = useLocation();
+  const [step, setStep]           = useState(location.state?.step || "pick");
+  const [selected, setSelected]   = useState(null);
+  const [note, setNote]           = useState("");
+  const [appointment, setAppt]    = useState(null);
+  const [hovered, setHovered]     = useState(null);
+  const [calKey, setCalKey]       = useState(0);
   const navigate = useNavigate();
 
-  // 🔥 FIX: AUTO REFRESH APPOINTMENT
   useEffect(() => {
     fetchAppointment();
-
-    const interval = setInterval(() => {
-      fetchAppointment();
-    }, 3000); // every 3 seconds
-
-    return () => clearInterval(interval);
+    const iv = setInterval(fetchAppointment, 5000);
+    return () => clearInterval(iv);
   }, []);
 
   const fetchAppointment = async () => {
     try {
       const res = await API.get("/appointments/my");
-
-      // 🔥 FIX: handle array or object response
-      const data = res.data;
-
-      if (Array.isArray(data)) {
-        setAppointment(data.length > 0 ? data[0] : null);
-      } else {
-        setAppointment(data);
-      }
-
-    } catch (err) {
-      console.log(err);
-    }
+      const d = res.data;
+      setAppt(Array.isArray(d) ? (d[0] || null) : d);
+    } catch (e) { console.log(e); }
   };
 
-  const handleMoodSelect = (mood) => {
-    setSelectedMood(mood);
-    setQuote(quotes[mood]);
-    setShowPopup(true);
-  };
-
-  const handleContinue = async () => {
+  const handleSave = async () => {
     try {
-      await API.post("/moods", {
-        mood: selectedMood,
-        note: note
-      });
-
-      // 🔥 FORCE REFRESH AFTER ACTION
-      setTimeout(() => {
-        fetchAppointment();
-      }, 500);
-
-    } catch (err) {
-      console.log(err);
-    }
-
-    setShowPopup(false);
-    setShowCalendar(true);
+      await API.post("/moods", { mood: selected.key, note });
+      setTimeout(fetchAppointment, 600);
+    } catch (e) { console.log(e); }
+    setCalKey(k => k + 1);   // force calendar remount → fresh fetch
+    setStep("dashboard");
   };
 
-  const handleTrackAgain = () => {
-    setShowCalendar(false);
-    setSelectedMood("");
+  const handleReset = () => {
+    setStep("pick");
+    setSelected(null);
     setNote("");
-    setQuote("");
   };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("role");
+    localStorage.removeItem("userId");
+    navigate("/");
+  };
+
+  const apptSt = appointment?.status ? STATUS_MAP[appointment.status] : null;
 
   return (
-    <div style={{
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      minHeight: "100vh",
-      background: "linear-gradient(135deg, #dfe9f3, #ffffff)",
-      fontFamily: "Arial"
-    }}>
-      <div style={{
-        width: "380px",
-        background: "white",
-        borderRadius: "25px",
-        padding: "20px",
-        boxShadow: "0 15px 40px rgba(0,0,0,0.15)"
-      }}>
+    <div style={p.page}>
+      <div style={{ ...p.blob, width:520, height:520, top:-200, right:-160 }} />
+      <div style={{ ...p.blob, width:360, height:360, bottom:-130, left:-110, background:"rgba(108,99,255,0.06)" }} />
+      <div style={{ ...p.blob, width:220, height:220, top:"40%", left:"6%",  background:"rgba(78,205,196,0.05)" }} />
 
-        <h2 style={{ textAlign: "center", marginBottom: "10px" }}>
-          Hear Me Out 💙
-        </h2>
+      {/* ────────────── PICK MOOD ────────────── */}
+      {step === "pick" && (
+        <div className="animate-fadeInUp" style={p.wrap}>
 
-        {!showCalendar && !showPopup && (
-          <>
-            <h3 style={{
-              textAlign: "center",
-              marginBottom: "15px",
-              color: "#555"
-            }}>
-              How are you feeling today?
-            </h3>
+          {/* Header */}
+          <div style={p.topBar}>
+            <div>
+              <p style={p.topDate}>
+                {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
+              </p>
+            </div>
+            <div style={{ display:"flex", gap:"8px" }}>
+              <button onClick={() => { setCalKey(k=>k+1); setStep("dashboard"); }} style={p.dashBtn}>
+                Dashboard →
+              </button>
+              <button onClick={handleLogout} style={p.logoutBtn}>
+                Sign out
+              </button>
+            </div>
+          </div>
 
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: "20px"
-            }}>
-              {[
-                { mood: "HAPPY", emoji: "😊" },
-                { mood: "SAD", emoji: "😢" },
-                { mood: "STRESSED", emoji: "😫" },
-                { mood: "ANXIOUS", emoji: "😰" }
-              ].map((item, i) => {
-                const active = selectedMood === item.mood;
+          {/* Hero */}
+          <div style={p.hero}>
+            <div style={p.heroRing}>
+              <span style={{fontSize:"36px"}}>💙</span>
+            </div>
+            <h1 style={p.h1}>How are you feeling today?</h1>
+            <p style={p.heroSub}>Check in with yourself. Your wellbeing matters.</p>
+          </div>
 
-                return (
-                  <button
-                    key={i}
-                    onClick={() => handleMoodSelect(item.mood)}
-                    style={{
-                      width: "70px",
-                      height: "70px",
-                      fontSize: "30px",
-                      borderRadius: "20px",
-                      border: active
-                        ? `2px solid ${moodStyles[item.mood].border}`
-                        : "1px solid #eee",
-                      background: active
-                        ? moodStyles[item.mood].bg
-                        : "#fff",
-                      cursor: "pointer",
-                      transition: "all 0.3s ease",
-                      boxShadow: active
-                        ? `0 0 15px ${moodStyles[item.mood].border}`
-                        : "0 4px 10px rgba(0,0,0,0.1)",
-                      transform: active ? "scale(1.1)" : "scale(1)"
-                    }}
-                  >
-                    {item.emoji}
-                  </button>
-                );
-              })}
+          {/* Mood grid */}
+          <div style={p.grid}>
+            {MOODS.map(m => {
+              const isHov = hovered === m.key;
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => { setSelected(m); setStep("note"); }}
+                  onMouseEnter={() => setHovered(m.key)}
+                  onMouseLeave={() => setHovered(null)}
+                  style={{
+                    ...p.card,
+                    background: m.gradient,
+                    boxShadow: isHov ? `0 22px 52px ${m.glow}` : "0 6px 22px rgba(0,0,0,0.2)",
+                    transform:  isHov ? "translateY(-7px) scale(1.03)" : "translateY(0) scale(1)",
+                  }}
+                >
+                  <div style={p.cardShine} />
+                  <span style={p.cardEmoji}>{m.emoji}</span>
+                  <span style={p.cardLabel}>{m.label}</span>
+                  <div style={p.cardArrow}>→</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <p style={p.hint}>Tap a mood to continue</p>
+        </div>
+      )}
+
+      {/* ────────────── NOTE STEP ────────────── */}
+      {step === "note" && selected && (
+        <div style={{ ...p.notePage, background: selected.gradient }}>
+          <div style={p.noteBlob1} />
+          <div style={p.noteBlob2} />
+
+          <button onClick={() => setStep("pick")} style={p.backBtn}>← Back</button>
+
+          <div style={p.noteInner}>
+            {/* Emoji ring */}
+            <div style={p.emojiRing}>
+              <span style={p.bigEmoji}>{selected.emoji}</span>
+            </div>
+            <h2 style={p.noteMoodTitle}>Feeling {selected.label}</h2>
+
+            {/* Motivational quote — hero element */}
+            <div style={p.quoteBox}>
+              <span style={p.quoteGlyph}>"</span>
+              <p style={p.quoteText}>{selected.quote}</p>
+              <span style={p.quoteGlyphClose}>"</span>
             </div>
 
-            <textarea
-              placeholder="Add a note (optional)..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              style={{
-                width: "100%",
-                height: "80px",
-                padding: "12px",
-                borderRadius: "15px",
-                border: "1px solid #ddd",
-                outline: "none",
-                fontSize: "14px",
-                resize: "none",
-                boxShadow: "inset 0 2px 5px rgba(0,0,0,0.05)"
-              }}
-            />
-          </>
-        )}
+            {/* Note */}
+            <div style={p.noteGroup}>
+              <p style={p.noteGroupTitle}>✏️ Add a note <span style={p.noteOptional}>(optional)</span></p>
+              <p style={p.noteGroupSub}>Share what's on your mind — it stays private</p>
+              <div style={p.textareaWrap}>
+                <textarea
+                  placeholder="e.g. I had a tough day, but I kept going…"
+                  value={note}
+                  onChange={e => setNote(e.target.value.slice(0,200))}
+                  style={p.textarea}
+                />
+                <span style={p.charCount}>{note.length} / 200</span>
+              </div>
+            </div>
 
-        {showPopup && (
-          <div style={{
-            marginTop: "20px",
-            padding: "20px",
-            borderRadius: "15px",
-            textAlign: "center",
-            background: selectedMood
-              ? moodStyles[selectedMood].bg
-              : "#f0f4ff"
-          }}>
-            <h3>Your Mood 💙</h3>
-            <p><strong>{selectedMood}</strong></p>
+            <button onClick={handleSave} style={p.saveBtn}>Save & Continue →</button>
+            <button onClick={handleSave} style={p.skipBtn}>Skip for now</button>
+          </div>
+        </div>
+      )}
 
-            <p style={{
-              fontStyle: "italic",
-              marginTop: "10px"
-            }}>
-              {quote}
-            </p>
+      {/* ────────────── DASHBOARD ────────────── */}
+      {step === "dashboard" && (
+        <div className="animate-fadeIn" style={p.dashWrap}>
 
-            <button
-              onClick={handleContinue}
-              style={{
-                marginTop: "15px",
-                padding: "10px 20px",
-                background: "#0084ff",
-                color: "white",
-                border: "none",
-                borderRadius: "20px",
-                cursor: "pointer",
-                boxShadow: "0 5px 15px rgba(0,132,255,0.3)"
-              }}
-            >
-              Continue
+          {/* Dashboard header */}
+          <div style={p.dashHeader}>
+            <div>
+              <h2 style={p.dashTitle}>Your Dashboard</h2>
+              <p style={p.dashSub}>Track your mood and appointments</p>
+            </div>
+            <div style={{ display:"flex", gap:"8px", flexShrink:0, marginTop:"4px" }}>
+              <button onClick={handleReset} style={p.trackBtn}>
+                + Track Mood
+              </button>
+              <button onClick={handleLogout} style={p.logoutBtn}>
+                Sign out
+              </button>
+            </div>
+          </div>
+
+          {/* Mood calendar */}
+          <section style={p.section}>
+            <p style={p.sectionLabel}>MOOD CALENDAR</p>
+            <MoodCalendar key={calKey} />
+          </section>
+
+          {/* Appointment card */}
+          <section style={p.section}>
+            <p style={p.sectionLabel}>APPOINTMENT</p>
+
+            {appointment && apptSt ? (
+              <div style={{ ...p.apptCard, background: apptSt.bg, borderColor: apptSt.border }}>
+                <div style={p.apptRow}>
+                  <span style={p.apptKey}>Status</span>
+                  <span style={{ ...p.apptVal, color: apptSt.color, fontWeight: 700 }}>
+                    {apptSt.label}
+                  </span>
+                </div>
+                <div style={p.apptRow}>
+                  <span style={p.apptKey}>Counselor</span>
+                  <span style={p.apptVal}>{appointment.assignedTo || "—"}</span>
+                </div>
+                <div style={p.apptRow}>
+                  <span style={p.apptKey}>Severity</span>
+                  <span style={p.apptVal}>{appointment.severity}</span>
+                </div>
+                {appointment.scheduleDate && (
+                  <div style={{ ...p.apptRow, borderBottom: "none" }}>
+                    <span style={p.apptKey}>Scheduled</span>
+                    <span style={p.apptVal}>
+                      {new Date(appointment.scheduleDate).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={p.noAppt}>
+                <span style={{ fontSize: "26px" }}>📋</span>
+                <span style={p.noApptText}>No appointment scheduled yet</span>
+              </div>
+            )}
+          </section>
+
+          {/* Action buttons */}
+          <div style={p.btnRow}>
+            <button onClick={() => navigate("/chat")} style={p.chatBtn}>
+              💬 Chat with Counselor
+            </button>
+            <button onClick={handleReset} style={p.trackBtnSm}>
+              🔄 Track Again
             </button>
           </div>
-        )}
-
-        {showCalendar && (
-          <div style={{ marginTop: "20px" }}>
-            <MoodCalendar />
-
-            <div style={{ marginTop: "20px", textAlign: "center" }}>
-              <button
-                onClick={() => navigate("/chat")}
-                style={{
-                  padding: "10px 20px",
-                  marginRight: "10px",
-                  background: "#0084ff",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "20px"
-                }}
-              >
-                Go to Chat 💬
-              </button>
-
-              <button
-                onClick={handleTrackAgain}
-                style={{
-                  padding: "10px 20px",
-                  background: "#4CAF50",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "20px"
-                }}
-              >
-                Track Again 🔁
-              </button>
-            </div>
-
-            <div style={{
-              marginTop: "20px",
-              padding: "15px",
-              borderRadius: "12px",
-              background: "#fff",
-              border: "1px solid #ddd"
-            }}>
-              <h3>Your Appointment</h3>
-
-              {appointment ? (
-                <>
-                  <p><strong>Severity:</strong> {appointment.severity}</p>
-                  <p><strong>Assigned To:</strong> {appointment.assignedTo}</p>
-                  <p><strong>Status:</strong> {appointment.status}</p>
-                  <p>
-                    <strong>Date:</strong>{" "}
-                    {new Date(appointment.scheduleDate).toLocaleString()}
-                  </p>
-                </>
-              ) : (
-                <p>No appointment yet</p>
-              )}
-            </div>
-          </div>
-        )}
-
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export default StudentDashboard;
+/* ── Styles ─────────────────────────────────────────────── */
+const p = {
+  page: {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "flex-start",
+    background: "linear-gradient(150deg,#1a1a2e 0%,#16213e 55%,#0f3460 100%)",
+    fontFamily: "'Lato',sans-serif",
+    padding: "32px 20px 60px",
+    position: "relative",
+    overflow: "hidden",
+  },
+  blob: {
+    position: "absolute",
+    borderRadius: "50%",
+    background: "rgba(108,99,255,0.08)",
+    pointerEvents: "none",
+  },
+
+  /* ── Pick ── */
+  wrap: {
+    width: "100%",
+    maxWidth: "460px",
+    position: "relative",
+    zIndex: 1,
+    marginTop: "12px",
+  },
+  topBar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "40px",
+  },
+  topDate: {
+    fontSize: "12px",
+    fontWeight: 500,
+    color: "rgba(255,255,255,0.38)",
+    margin: 0,
+    letterSpacing: "0.02em",
+  },
+  dashBtn: {
+    padding: "8px 18px",
+    background: "rgba(255,255,255,0.07)",
+    color: "rgba(255,255,255,0.65)",
+    border: "1px solid rgba(255,255,255,0.14)",
+    borderRadius: "99px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    letterSpacing: "0.01em",
+    transition: "all 0.2s",
+  },
+  hero: {
+    textAlign: "center",
+    marginBottom: "44px",
+  },
+  heroRing: {
+    width: "76px",
+    height: "76px",
+    borderRadius: "50%",
+    background: "rgba(108,99,255,0.18)",
+    border: "1.5px solid rgba(108,99,255,0.35)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    margin: "0 auto 22px",
+  },
+  h1: {
+    fontSize: "28px",
+    fontWeight: 800,
+    color: "#fff",
+    margin: "0 0 10px",
+    lineHeight: 1.25,
+    letterSpacing: "-0.5px",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  heroSub: {
+    fontSize: "15px",
+    fontWeight: 400,
+    color: "rgba(255,255,255,0.52)",
+    margin: 0,
+    lineHeight: 1.65,
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "14px",
+    marginBottom: "22px",
+  },
+  card: {
+    position: "relative",
+    padding: "22px 18px",
+    borderRadius: "22px",
+    border: "none",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "8px",
+    overflow: "hidden",
+    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+    fontFamily: "inherit",
+    minHeight: "148px",
+  },
+  cardShine: {
+    position: "absolute",
+    top: "-28px",
+    right: "-28px",
+    width: "80px",
+    height: "80px",
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.13)",
+    pointerEvents: "none",
+  },
+  cardEmoji: { fontSize: "40px", lineHeight: 1, zIndex: 1 },
+  cardLabel: {
+    fontSize: "17px",
+    fontWeight: 700,
+    color: "#fff",
+    letterSpacing: "-0.2px",
+    zIndex: 1,
+    fontFamily: "'Poppins',sans-serif",
+  },
+  cardArrow: {
+    marginTop: "auto",
+    alignSelf: "flex-end",
+    width: "26px",
+    height: "26px",
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.22)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#fff",
+    fontSize: "13px",
+    fontWeight: 700,
+    zIndex: 1,
+  },
+  hint: {
+    textAlign: "center",
+    fontSize: "12px",
+    fontWeight: 500,
+    color: "rgba(255,255,255,0.22)",
+    margin: 0,
+    letterSpacing: "0.02em",
+  },
+
+  /* ── Note ── */
+  notePage: {
+    position: "relative",
+    minHeight: "100vh",
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "80px 28px 52px",
+    overflow: "hidden",
+  },
+  noteBlob1: {
+    position: "absolute", width: "380px", height: "380px", borderRadius: "50%",
+    background: "rgba(255,255,255,0.1)", top: "-140px", right: "-110px", pointerEvents: "none",
+  },
+  noteBlob2: {
+    position: "absolute", width: "260px", height: "260px", borderRadius: "50%",
+    background: "rgba(0,0,0,0.1)", bottom: "-90px", left: "-70px", pointerEvents: "none",
+  },
+  backBtn: {
+    position: "absolute",
+    top: "32px",
+    left: "28px",
+    background: "rgba(0,0,0,0.14)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    color: "rgba(255,255,255,0.75)",
+    padding: "8px 18px",
+    borderRadius: "99px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    zIndex: 2,
+    letterSpacing: "0.01em",
+  },
+  noteInner: {
+    width: "100%",
+    maxWidth: "420px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    zIndex: 1,
+    gap: "0px",
+  },
+  emojiRing: {
+    width: "104px",
+    height: "104px",
+    borderRadius: "50%",
+    background: "rgba(255,255,255,0.18)",
+    border: "2px solid rgba(255,255,255,0.3)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: "18px",
+    boxShadow: "0 10px 32px rgba(0,0,0,0.14)",
+  },
+  bigEmoji: { fontSize: "52px" },
+  noteMoodTitle: {
+    fontSize: "28px",
+    fontWeight: 700,
+    color: "#fff",
+    margin: "0 0 24px",
+    letterSpacing: "-0.4px",
+    fontFamily: "'Poppins',sans-serif",
+    textShadow: "0 2px 8px rgba(0,0,0,0.15)",
+  },
+  quoteBox: {
+    background: "rgba(0,0,0,0.18)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    borderRadius: "20px",
+    padding: "22px 24px",
+    marginBottom: "28px",
+    width: "100%",
+    backdropFilter: "blur(4px)",
+  },
+  quoteGlyph: {
+    fontSize: "48px",
+    color: "rgba(255,255,255,0.35)",
+    display: "block",
+    lineHeight: "32px",
+    marginBottom: "8px",
+    fontFamily: "Georgia, serif",
+    fontStyle: "normal",
+  },
+  quoteGlyphClose: {
+    fontSize: "48px",
+    color: "rgba(255,255,255,0.35)",
+    display: "block",
+    lineHeight: "20px",
+    marginTop: "10px",
+    textAlign: "right",
+    fontFamily: "Georgia, serif",
+    fontStyle: "normal",
+  },
+  quoteText: {
+    fontSize: "17px",
+    fontWeight: 400,
+    color: "#fff",
+    fontStyle: "italic",
+    lineHeight: 1.7,
+    margin: 0,
+    fontFamily: "'Lato',sans-serif",
+    textShadow: "0 1px 4px rgba(0,0,0,0.12)",
+  },
+  noteGroup: {
+    width: "100%",
+    marginBottom: "22px",
+  },
+  noteGroupTitle: {
+    fontSize: "16px",
+    fontWeight: 600,
+    color: "#fff",
+    margin: "0 0 4px",
+    letterSpacing: "-0.1px",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  noteOptional: {
+    fontSize: "13px",
+    fontWeight: 400,
+    color: "rgba(255,255,255,0.55)",
+    fontFamily: "'Lato',sans-serif",
+  },
+  noteGroupSub: {
+    fontSize: "14px",
+    fontWeight: 400,
+    color: "rgba(255,255,255,0.6)",
+    margin: "0 0 12px",
+  },
+  textareaWrap: {
+    position: "relative",
+  },
+  textarea: {
+    width: "100%",
+    minHeight: "100px",
+    background: "rgba(0,0,0,0.18)",
+    border: "1.5px solid rgba(255,255,255,0.18)",
+    borderRadius: "14px",
+    padding: "14px 16px",
+    color: "#fff",
+    fontSize: "15px",
+    fontWeight: 400,
+    lineHeight: 1.65,
+    resize: "none",
+    outline: "none",
+    fontFamily: "'Lato',sans-serif",
+    boxSizing: "border-box",
+  },
+  charCount: {
+    position: "absolute",
+    bottom: "10px",
+    right: "14px",
+    fontSize: "11px",
+    fontWeight: 500,
+    color: "rgba(255,255,255,0.28)",
+  },
+  saveBtn: {
+    width: "100%",
+    padding: "18px",
+    background: "rgba(255,255,255,0.97)",
+    color: "#2D3047",
+    border: "none",
+    borderRadius: "16px",
+    fontSize: "16px",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "0.02em",
+    boxShadow: "0 10px 32px rgba(0,0,0,0.22)",
+    marginBottom: "14px",
+    transition: "transform 0.15s, box-shadow 0.15s",
+  },
+  skipBtn: {
+    background: "none",
+    border: "none",
+    color: "rgba(255,255,255,0.5)",
+    fontSize: "14px",
+    fontWeight: 500,
+    cursor: "pointer",
+    fontFamily: "'Lato',sans-serif",
+    padding: "8px",
+    letterSpacing: "0.01em",
+    textDecoration: "underline",
+    textUnderlineOffset: "3px",
+  },
+
+  /* ── Dashboard ── */
+  dashWrap: {
+    width: "100%",
+    maxWidth: "520px",
+    position: "relative",
+    zIndex: 1,
+    marginTop: "8px",
+  },
+  dashHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: "32px",
+  },
+  dashTitle: {
+    fontSize: "26px",
+    fontWeight: 700,
+    color: "#fff",
+    margin: "0 0 4px",
+    letterSpacing: "-0.4px",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  dashSub: {
+    fontSize: "14px",
+    fontWeight: 400,
+    color: "rgba(255,255,255,0.48)",
+    margin: 0,
+  },
+  trackBtn: {
+    padding: "10px 20px",
+    background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "99px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    boxShadow: "0 6px 18px rgba(91,107,216,0.38)",
+    letterSpacing: "0.01em",
+    flexShrink: 0,
+  },
+  logoutBtn: {
+    padding: "10px 16px",
+    background: "rgba(255,255,255,0.07)",
+    color: "rgba(255,255,255,0.55)",
+    border: "1px solid rgba(255,255,255,0.14)",
+    borderRadius: "99px",
+    fontSize: "13px",
+    fontWeight: 500,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "0.01em",
+    flexShrink: 0,
+    transition: "all 0.2s",
+  },
+  section: {
+    marginBottom: "24px",
+  },
+  sectionLabel: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: "rgba(255,255,255,0.35)",
+    letterSpacing: "0.1em",
+    margin: "0 0 10px",
+  },
+  apptCard: {
+    borderRadius: "16px",
+    padding: "4px 18px",
+    border: "1.5px solid",
+  },
+  apptRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px 0",
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
+  },
+  apptKey: {
+    fontSize: "11px",
+    fontWeight: 700,
+    color: "rgba(255,255,255,0.42)",
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  apptVal: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "rgba(255,255,255,0.85)",
+  },
+  noAppt: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    padding: "18px 20px",
+    background: "rgba(255,255,255,0.03)",
+    border: "1.5px dashed rgba(255,255,255,0.1)",
+    borderRadius: "14px",
+  },
+  noApptText: {
+    fontSize: "15px",
+    fontWeight: 400,
+    color: "rgba(255,255,255,0.38)",
+  },
+  btnRow: {
+    display: "flex",
+    gap: "12px",
+    marginTop: "8px",
+  },
+  chatBtn: {
+    flex: 1,
+    padding: "15px",
+    background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
+    color: "#fff",
+    border: "none",
+    borderRadius: "14px",
+    fontSize: "15px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    boxShadow: "0 8px 20px rgba(91,107,216,0.32)",
+    letterSpacing: "0.01em",
+  },
+  trackBtnSm: {
+    flex: 1,
+    padding: "15px",
+    background: "rgba(255,255,255,0.06)",
+    color: "rgba(255,255,255,0.72)",
+    border: "1.5px solid rgba(255,255,255,0.16)",
+    borderRadius: "14px",
+    fontSize: "15px",
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    letterSpacing: "0.01em",
+  },
+};

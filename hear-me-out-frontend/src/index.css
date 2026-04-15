@@ -1,13 +1,106 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Lato:wght@300;400;700&display=swap');
+
+/* ── Design tokens ───────────────────────────── */
+:root {
+  /* Brand */
+  --primary:        #5B6BD8;   /* calm indigo          */
+  --primary-dark:   #4455C7;
+  --primary-light:  #EEF0FD;
+  --teal:           #38C9B8;   /* growth / hopeful     */
+  --teal-light:     #E6FAF7;
+  --coral:          #F97B6B;   /* warmth / energy      */
+  --coral-light:    #FFF0EE;
+  --amber:          #F9A72B;   /* awareness / caution  */
+  --amber-light:    #FFF8EC;
+  --success:        #34D399;
+  --danger:         #F87171;
+
+  /* Neutrals */
+  --bg:             #FAFBFF;
+  --surface:        #FFFFFF;
+  --border:         rgba(91,107,216,0.14);
+  --text:           #2D3047;   /* deep indigo — not harsh black */
+  --text-2:         #7B7F9E;
+  --text-3:         #A8AECB;
+
+  /* Shadows */
+  --shadow-sm:  0 2px 10px rgba(45,48,71,0.07);
+  --shadow-md:  0 6px 24px rgba(45,48,71,0.10);
+  --shadow-lg:  0 16px 48px rgba(45,48,71,0.14);
+  --shadow-col: 0 8px 24px rgba(91,107,216,0.22);
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* ── Reset ───────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
+
+html, body, #root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+body {
+  /* Poppins for headings via className; Lato for all base text */
+  font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.65;
+  font-size: 16px;
+}
+
+/* Heading font helper */
+.font-poppins { font-family: 'Poppins', sans-serif; }
+
+/* ── Keyframes ───────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes bounceIn {
+  0%   { transform: scale(0.82); opacity: 0; }
+  65%  { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); }
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.06); }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes typingBounce {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+/* ── Animation classes ───────────────────────── */
+.animate-fadeInUp  { animation: fadeInUp  0.5s ease both; }
+.animate-fadeIn    { animation: fadeIn    0.4s ease both; }
+.animate-bounceIn  { animation: bounceIn 0.45s ease both; }
+.animate-pulse     { animation: pulse    2.6s ease infinite; }
+.animate-spin      { animation: spin     0.85s linear infinite; }
+
+/* ── Scrollbar ───────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(91,107,216,0.25);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(91,107,216,0.45); }
