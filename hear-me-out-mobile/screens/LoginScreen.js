@@ -39,14 +39,15 @@ export default function LoginScreen({ navigation }) {
         ["token", res.data.token],
         ["role", user.role],
         ["userId", user.id],
-        ["userName", user.name || ""],
+        ["name", user.name || ""],
+        ["email", user.email || ""],
       ]);
 
       if (user.role === "student") {
         try {
           const check = await API.get(`/assessment/check/${user.id}`);
           if (check.data.hasAssessment) {
-            navigation.replace("Dashboard");
+            navigation.replace("Dashboard", { step: "pick" });
           } else {
             navigation.replace("Assessment");
           }

@@ -7,8 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
 
-// ⚠️ Change to your local IP when testing on a real device
-const socket = io("http://10.0.2.2:5000");
+const socket = io("http://192.168.8.101:5000");
 
 export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");

@@ -231,7 +231,7 @@ export default function AssessmentScreen({ navigation }) {
                   <Text style={styles.severityText}>{result.severity} RISK</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => navigation.replace("Dashboard")}
+                  onPress={() => navigation.replace("Dashboard", { step: "pick" })}
                   activeOpacity={0.85}
                 >
                   <LinearGradient colors={["#6C63FF", "#764ba2"]} style={styles.continueBtn}>
