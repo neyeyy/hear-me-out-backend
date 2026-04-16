@@ -6,8 +6,20 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
+import Constants from "expo-constants";
 
-const socket = io("http://192.168.8.101:5000");
+const getSocketUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const host = hostUri.split(":").shift();
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+      return `http://${host}:5000`;
+    }
+  }
+  return "http://192.168.8.101:5000";
+};
+
+const socket = io(getSocketUrl());
 
 export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");

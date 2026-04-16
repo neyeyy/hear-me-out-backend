@@ -417,17 +417,14 @@ export default function CounselorDashboard() {
       </aside>
 
       {/* ══════════ MAIN ══════════ */}
-      <main style={s.main}>
+      <main style={{ ...s.main, padding: (tab === "chat" || tab === "schedule" || tab === "analytics") ? "0" : "28px 32px" }}>
 
-        {/* ── Top bar ── */}
-        <div style={s.topBar}>
+        {/* ── Top bar — hidden on chat, schedule, analytics tabs ── */}
+        {tab !== "chat" && tab !== "schedule" && tab !== "analytics" && <div style={s.topBar}>
           <div>
             <h1 style={s.pageTitle}>
               {tab === "overview"  && `${greeting}, ${counselorName.split(" ")[0]} 👋`}
               {tab === "students"  && "Students"}
-              {tab === "analytics" && "Analytics"}
-              {tab === "schedule"  && "Schedule"}
-              {tab === "chat"      && "Chat"}
             </h1>
             <p style={s.pageSub}>
               {new Date().toLocaleDateString("en-US", { weekday:"long", year:"numeric", month:"long", day:"numeric" })}
@@ -467,7 +464,7 @@ export default function CounselorDashboard() {
               )}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* ══════════ OVERVIEW TAB ══════════ */}
         {tab === "overview" && (
@@ -795,7 +792,7 @@ export default function CounselorDashboard() {
 
         {/* ══════════ ANALYTICS TAB — aggregate data only, no actions ══════════ */}
         {tab === "analytics" && (
-          <>
+          <div style={{ padding: "28px 32px" }}>
             {/* Wellness headline */}
             <div style={{ ...s.card, background:"linear-gradient(135deg,#1E2140 0%,#2D3166 100%)", marginBottom:"20px" }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:"16px" }}>
@@ -923,7 +920,7 @@ export default function CounselorDashboard() {
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
 
         {/* ══════════ SCHEDULE TAB ══════════ */}
@@ -957,7 +954,7 @@ export default function CounselorDashboard() {
 
           return (
             <>
-              <div style={s.card}>
+              <div style={{ ...s.card, margin: 0, borderRadius: 0, minHeight: "100vh", boxShadow: "none" }}>
                 {/* Week nav header */}
                 <div style={s.weekNavBar}>
                   <button onClick={() => setWeekOffset(o => o - 1)} style={s.weekNavBtn}>← Prev</button>
@@ -1806,7 +1803,7 @@ const s = {
   /* ── Chat tab — inline messenger ── */
   messengerWrap: {
     display: "flex", gap: 0,
-    height: "calc(100vh - 120px)",
+    height: "100vh",
     background: "#fff",
     borderRadius: "16px",
     boxShadow: "0 2px 14px rgba(0,0,0,0.06)",

@@ -1,7 +1,22 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 
-const BASE_URL = "http://192.168.8.101:5000/api";
+// Automatically use whichever IP the Expo dev server is running on.
+// This means the app works on any network — home, school, hotspot, etc.
+const getBaseUrl = () => {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const host = hostUri.split(":").shift();
+    if (host && host !== "localhost" && host !== "127.0.0.1") {
+      return `http://${host}:5000/api`;
+    }
+  }
+  // Fallback if hostUri is unavailable (e.g. production build)
+  return "http://192.168.8.101:5000/api";
+};
+
+const BASE_URL = getBaseUrl();
 
 const API = axios.create({ baseURL: BASE_URL });
 
