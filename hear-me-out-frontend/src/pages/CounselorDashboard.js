@@ -489,10 +489,15 @@ export default function CounselorDashboard() {
                 d.getMonth()    === day.getMonth()    &&
                 d.getDate()     === day.getDate();
 
+              const ovRoundToSlot = (h, m) => {
+                if (m < 15)  return `${String(h).padStart(2,"0")}:00`;
+                if (m < 45)  return `${String(h).padStart(2,"0")}:30`;
+                return `${String(h + 1).padStart(2,"0")}:00`;
+              };
+
               const ovMatchSlot = (d, slot) => {
-                const [sh, sm] = slot.value.split(":").map(Number);
-                if (d.getHours() === sh && d.getMinutes() === sm) return true;
-                if (d.getUTCHours() === sh && d.getUTCMinutes() === sm) return true;
+                if (ovRoundToSlot(d.getHours(),    d.getMinutes())    === slot.value) return true;
+                if (ovRoundToSlot(d.getUTCHours(), d.getUTCMinutes()) === slot.value) return true;
                 return false;
               };
 
@@ -934,11 +939,17 @@ export default function CounselorDashboard() {
             d.getMonth()    === day.getMonth()    &&
             d.getDate()     === day.getDate();
 
+          // Round h:m to nearest :00 or :30 slot value
+          const roundToSlot = (h, m) => {
+            if (m < 15)  return `${String(h).padStart(2,"0")}:00`;
+            if (m < 45)  return `${String(h).padStart(2,"0")}:30`;
+            return `${String(h + 1).padStart(2,"0")}:00`; // round up
+          };
+
           const matchesSlot = (d, slot) => {
-            const [sh, sm] = slot.value.split(":").map(Number);
-            // Try local time first, then UTC (handles server/browser timezone mismatch)
-            if (d.getHours() === sh && d.getMinutes() === sm) return true;
-            if (d.getUTCHours() === sh && d.getUTCMinutes() === sm) return true;
+            // Try local time, then UTC fallback (timezone mismatch guard)
+            if (roundToSlot(d.getHours(),    d.getMinutes())    === slot.value) return true;
+            if (roundToSlot(d.getUTCHours(), d.getUTCMinutes()) === slot.value) return true;
             return false;
           };
 

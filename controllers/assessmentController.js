@@ -2,8 +2,72 @@ const Assessment = require('../models/Assessment');
 const Appointment = require("../models/Appointment");
 const User = require("../models/User");
 
+/* ── Scheduling helpers ──────────────────────────────────────
+   Office hours: Mon–Fri, 9:00–11:30 and 13:00–15:30 (30-min slots)
+   Lunch break:  12:00–12:59 → no appointments
+─────────────────────────────────────────────────────────────── */
+const TIME_SLOTS = [
+  { h: 9,  m: 0  }, { h: 9,  m: 30 },
+  { h: 10, m: 0  }, { h: 10, m: 30 },
+  { h: 11, m: 0  }, { h: 11, m: 30 },
+  { h: 13, m: 0  }, { h: 13, m: 30 },
+  { h: 14, m: 0  }, { h: 14, m: 30 },
+  { h: 15, m: 0  }, { h: 15, m: 30 },
+];
 
-// 🔥 AUTO APPOINTMENT FUNCTION (FIXED)
+function skipToWeekday(date) {
+  const d = new Date(date);
+  const dow = d.getDay();
+  if (dow === 6) d.setDate(d.getDate() + 2);
+  if (dow === 0) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+async function findNextAvailableSlot(daysFromNow) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let candidate = new Date(today.getTime());
+  candidate.setDate(today.getDate() + daysFromNow);
+  candidate = skipToWeekday(candidate);
+
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+
+    const existing = await Appointment.find({
+      scheduleDate: { $gte: dayStart, $lte: dayEnd },
+      status: { $in: ['PENDING', 'ONGOING'] },
+    });
+
+    const booked = new Set(
+      existing.map(a => {
+        const d = new Date(a.scheduleDate);
+        return `${d.getHours()}:${d.getMinutes()}`;
+      })
+    );
+
+    for (const slot of TIME_SLOTS) {
+      if (!booked.has(`${slot.h}:${slot.m}`)) {
+        const result = new Date(candidate);
+        result.setHours(slot.h, slot.m, 0, 0);
+        return result;
+      }
+    }
+
+    candidate.setDate(candidate.getDate() + 1);
+    candidate = skipToWeekday(candidate);
+  }
+
+  // Fallback
+  const fallback = new Date(today);
+  fallback.setDate(today.getDate() + daysFromNow);
+  const fallbackDay = skipToWeekday(fallback);
+  fallbackDay.setHours(9, 0, 0, 0);
+  return fallbackDay;
+}
+
+// 🔥 AUTO APPOINTMENT FUNCTION
 const createAutoAppointment = async (studentId, severity, source) => {
   try {
     // 🚫 Prevent duplicate active appointments
@@ -12,15 +76,14 @@ const createAutoAppointment = async (studentId, severity, source) => {
       status: { $in: ["PENDING", "ONGOING"] }
     });
 
-    // 🔥 FIX: RETURN existing instead of null
     if (existing) {
       console.log("ℹ️ Active appointment already exists, using existing");
       return existing;
     }
 
-    // 📅 Auto schedule (next day)
-    const scheduleDate = new Date();
-    scheduleDate.setDate(scheduleDate.getDate() + 1);
+    // Days out by severity: HIGH=1, MEDIUM=3
+    const daysOut = severity === "HIGH" ? 1 : 3;
+    const scheduleDate = await findNextAvailableSlot(daysOut);
 
     const appointment = await Appointment.create({
       studentId,

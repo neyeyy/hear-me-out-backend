@@ -5,46 +5,55 @@ const Assessment = require('../models/Assessment');
    Office hours: Mon–Fri, 9:00–11:30 and 13:00–15:30 (30-min slots)
    Lunch break:  12:00–12:59 → no appointments
 ─────────────────────────────────────────────────────────────── */
+/* Valid 30-min slots: Mon–Fri, 9:00–11:30, then 13:00–15:30 (12:00–12:59 = lunch) */
 const TIME_SLOTS = [
   { h: 9,  m: 0  }, { h: 9,  m: 30 },
   { h: 10, m: 0  }, { h: 10, m: 30 },
   { h: 11, m: 0  }, { h: 11, m: 30 },
-  // 12:00–12:59 = lunch break (skipped)
+  // 12:00–12:59 → lunch break, no appointments
   { h: 13, m: 0  }, { h: 13, m: 30 },
   { h: 14, m: 0  }, { h: 14, m: 30 },
   { h: 15, m: 0  }, { h: 15, m: 30 },
 ];
 
+// Advance Saturday → Monday, Sunday → Monday
 function skipToWeekday(date) {
   const d = new Date(date);
-  const dow = d.getDay(); // 0=Sun, 6=Sat
-  if (dow === 6) d.setDate(d.getDate() + 2); // Sat → Mon
-  if (dow === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+  const dow = d.getDay();
+  if (dow === 6) d.setDate(d.getDate() + 2);
+  if (dow === 0) d.setDate(d.getDate() + 1);
   return d;
 }
 
+// Find the first open slot starting daysFromNow weekdays out
 async function findNextAvailableSlot(daysFromNow) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  let candidate = new Date(today);
+  // Start candidate on the target day, skipping any weekend
+  let candidate = skipToWeekday(new Date(today.getTime()));
   candidate.setDate(today.getDate() + daysFromNow);
-  candidate = skipToWeekday(candidate);
+  candidate = skipToWeekday(candidate); // re-check after adding days
 
-  for (let attempt = 0; attempt < 21; attempt++) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
     const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
 
+    // Fetch all active appointments on this day
     const existing = await Appointment.find({
       scheduleDate: { $gte: dayStart, $lte: dayEnd },
       status: { $in: ['PENDING', 'ONGOING'] },
     });
 
-    const booked = new Set(existing.map(a => {
-      const d = new Date(a.scheduleDate);
-      return `${d.getHours()}:${d.getMinutes()}`;
-    }));
+    // Build a set of booked "H:M" keys using local server time
+    const booked = new Set(
+      existing.map(a => {
+        const d = new Date(a.scheduleDate);
+        return `${d.getHours()}:${d.getMinutes()}`;
+      })
+    );
 
+    // Return the first unbooked slot
     for (const slot of TIME_SLOTS) {
       if (!booked.has(`${slot.h}:${slot.m}`)) {
         const result = new Date(candidate);
@@ -53,27 +62,33 @@ async function findNextAvailableSlot(daysFromNow) {
       }
     }
 
-    // All slots taken — try next workday
+    // All slots taken on this day — advance to next workday
     candidate.setDate(candidate.getDate() + 1);
     candidate = skipToWeekday(candidate);
   }
 
-  // Fallback: use base date at 9 AM
-  const fallback = skipToWeekday(new Date(today));
+  // Fallback: first slot on the target weekday (should almost never reach here)
+  const fallback = new Date(today);
   fallback.setDate(today.getDate() + daysFromNow);
-  fallback.setHours(9, 0, 0, 0);
-  return fallback;
+  const fallbackDay = skipToWeekday(fallback);
+  fallbackDay.setHours(9, 0, 0, 0);
+  return fallbackDay;
 }
 
+// Validate a manually-set schedule date
+// Rules: Mon–Fri only, 9:00 AM – 3:59 PM, no 12:xx (lunch), must be :00 or :30
 function isValidScheduleSlot(date) {
-  const d = new Date(date);
+  const d   = new Date(date);
   const dow = d.getDay();
-  if (dow === 0 || dow === 6) return false; // weekend
-  const h = d.getHours(); const m = d.getMinutes();
-  if (h < 9 || h >= 16) return false;       // outside hours
-  if (h === 12) return false;                // lunch break
-  // must be on a 30-min mark
-  if (m !== 0 && m !== 30) return false;
+  if (dow === 0 || dow === 6) return false;   // weekend
+
+  const h = d.getHours();
+  const m = d.getMinutes();
+
+  if (h < 9 || h >= 16)  return false;        // outside 9 AM – 4 PM
+  if (h === 12)          return false;         // 12:00–12:59 lunch break
+  if (m !== 0 && m !== 30) return false;       // must be on :00 or :30
+
   return true;
 }
 
