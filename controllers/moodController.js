@@ -2,6 +2,67 @@ const Mood = require('../models/Mood');
 const Appointment = require('../models/Appointment');
 const Assessment = require('../models/Assessment');
 
+/* ── Scheduling helpers (Mon–Fri, 9–11:30 and 13–15:30, no lunch) ── */
+const TIME_SLOTS = [
+  { h: 9,  m: 0  }, { h: 9,  m: 30 },
+  { h: 10, m: 0  }, { h: 10, m: 30 },
+  { h: 11, m: 0  }, { h: 11, m: 30 },
+  { h: 13, m: 0  }, { h: 13, m: 30 },
+  { h: 14, m: 0  }, { h: 14, m: 30 },
+  { h: 15, m: 0  }, { h: 15, m: 30 },
+];
+
+function skipToWeekday(date) {
+  const d = new Date(date);
+  const dow = d.getDay();
+  if (dow === 6) d.setDate(d.getDate() + 2);
+  if (dow === 0) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+async function findNextAvailableSlot(daysFromNow) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let candidate = new Date(today.getTime());
+  candidate.setDate(today.getDate() + daysFromNow);
+  candidate = skipToWeekday(candidate);
+
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+
+    const existing = await Appointment.find({
+      scheduleDate: { $gte: dayStart, $lte: dayEnd },
+      status: { $in: ['PENDING', 'ONGOING'] },
+    });
+
+    const booked = new Set(
+      existing.map(a => {
+        const d = new Date(a.scheduleDate);
+        return `${d.getHours()}:${d.getMinutes()}`;
+      })
+    );
+
+    for (const slot of TIME_SLOTS) {
+      if (!booked.has(`${slot.h}:${slot.m}`)) {
+        const result = new Date(candidate);
+        result.setHours(slot.h, slot.m, 0, 0);
+        return result;
+      }
+    }
+
+    candidate.setDate(candidate.getDate() + 1);
+    candidate = skipToWeekday(candidate);
+  }
+
+  const fallback = new Date(today);
+  fallback.setDate(today.getDate() + daysFromNow);
+  const fallbackDay = skipToWeekday(fallback);
+  fallbackDay.setHours(9, 0, 0, 0);
+  return fallbackDay;
+}
+
 // 🔥 MOTIVATION FUNCTION
 const getMotivation = (mood) => {
   const quotes = {
@@ -72,24 +133,12 @@ exports.createMood = async (req, res) => {
 
       // 👤 Assign role
       let assignedTo = "Student Assistant";
+      if (severity === "HIGH") assignedTo = "Guidance Counselor";
+      else if (severity === "MEDIUM") assignedTo = "Review Needed";
 
-      if (severity === "HIGH") {
-        assignedTo = "Guidance Counselor";
-      } else if (severity === "MEDIUM") {
-        assignedTo = "Review Needed";
-      }
-
-      // 📅 Schedule date
-      const today = new Date();
-      let scheduleDate = new Date(today);
-
-      if (severity === "HIGH") {
-        scheduleDate.setDate(today.getDate() + 1);
-      } else if (severity === "MEDIUM") {
-        scheduleDate.setDate(today.getDate() + 3);
-      } else {
-        scheduleDate.setDate(today.getDate() + 5);
-      }
+      // 📅 Schedule date — proper Mon–Fri slot
+      const daysOut = severity === "HIGH" ? 1 : severity === "MEDIUM" ? 3 : 5;
+      const scheduleDate = await findNextAvailableSlot(daysOut);
 
       // 🗓️ Create appointment
       await Appointment.create({
@@ -97,7 +146,7 @@ exports.createMood = async (req, res) => {
         severity,
         assignedTo,
         scheduleDate,
-        status: "PENDING" // 🔥 IMPORTANT
+        status: "PENDING"
       });
 
       alertTriggered = true;

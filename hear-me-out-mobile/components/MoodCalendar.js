@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Modal, ScrollView, Platform,
+} from "react-native";
 import API from "../services/api";
 
 const MOODS = {
-  HAPPY:    { color: "#4ECDC4", emoji: "😊" },
-  SAD:      { color: "#7C6FCD", emoji: "😢" },
-  STRESSED: { color: "#F9A72B", emoji: "😫" },
-  ANXIOUS:  { color: "#F87171", emoji: "😰" },
+  HAPPY:    { color: "#4ECDC4", emoji: "😊", label: "Happy" },
+  SAD:      { color: "#7C6FCD", emoji: "😢", label: "Sad" },
+  STRESSED: { color: "#F9A72B", emoji: "😫", label: "Stressed" },
+  ANXIOUS:  { color: "#F87171", emoji: "😰", label: "Anxious" },
 };
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -15,29 +18,46 @@ const MONTH_NAMES = [
   "July","August","September","October","November","December",
 ];
 
+function formatTime(dateStr) {
+  return new Date(dateStr).toLocaleTimeString("en-US", {
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+
+function formatFullDate(year, month, day) {
+  return new Date(year, month, day).toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  });
+}
+
 export default function MoodCalendar() {
   const today = new Date();
-  const [viewYear,  setViewYear]  = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
-  const [allMoods,  setAllMoods]  = useState([]);
-  const [loading,   setLoading]   = useState(true);
+  const [viewYear,     setViewYear]     = useState(today.getFullYear());
+  const [viewMonth,    setViewMonth]    = useState(today.getMonth());
+  const [allMoods,     setAllMoods]     = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [selectedDay,  setSelectedDay]  = useState(null); // { day, entries[] }
 
   useEffect(() => {
     API.get("/moods")
       .then(res => {
         const list = Array.isArray(res.data) ? res.data : (res.data.moods || []);
-        setAllMoods(list);
+        // Sort oldest first so latest mood wins on cell display
+        setAllMoods([...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
       })
       .catch(err => console.log("Mood fetch error:", err))
       .finally(() => setLoading(false));
   }, []);
 
+  // Build map: day → array of entries (oldest→newest)
   const moodMap = useCallback(() => {
     const map = {};
     allMoods.forEach(item => {
       const d = new Date(item.createdAt);
       if (d.getFullYear() === viewYear && d.getMonth() === viewMonth) {
-        map[d.getDate()] = item.mood;
+        const day = d.getDate();
+        if (!map[day]) map[day] = [];
+        map[day].push(item);
       }
     });
     return map;
@@ -56,10 +76,16 @@ export default function MoodCalendar() {
 
   const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const daysInMonth    = new Date(viewYear, viewMonth + 1, 0).getDate();
-  // Monday-first offset: JS getDay() 0=Sun → (day+6)%7 gives Mon=0
   const firstDayOffset = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
   const days           = moodMap();
   const trackedCount   = Object.keys(days).length;
+
+  const totalCells = firstDayOffset + daysInMonth;
+  const cells = Array.from({ length: totalCells }, (_, i) =>
+    i < firstDayOffset
+      ? { blank: true, key: `b${i}` }
+      : { blank: false, key: `d${i}`, day: i - firstDayOffset + 1 }
+  );
 
   if (loading) {
     return (
@@ -69,12 +95,6 @@ export default function MoodCalendar() {
       </View>
     );
   }
-
-  // Build flat cell array: blank offsets then actual days
-  const totalCells = firstDayOffset + daysInMonth;
-  const cells = Array.from({ length: totalCells }, (_, i) =>
-    i < firstDayOffset ? { blank: true, key: `b${i}` } : { blank: false, key: `d${i}`, day: i - firstDayOffset + 1 }
-  );
 
   return (
     <View style={s.container}>
@@ -116,8 +136,10 @@ export default function MoodCalendar() {
         {cells.map(cell => {
           if (cell.blank) return <View key={cell.key} style={s.cellOuter} />;
           const { day } = cell;
-          const mood    = days[day];
-          const m       = mood ? MOODS[mood] : null;
+          const entries = days[day] || [];
+          // Show the most recent mood of the day on the cell
+          const latestMood = entries.length > 0 ? entries[entries.length - 1].mood : null;
+          const m       = latestMood ? MOODS[latestMood] : null;
           const isToday = isCurrentMonth && day === today.getDate();
           const bg      = m ? m.color
             : isToday ? "rgba(91,107,216,0.35)"
@@ -125,11 +147,18 @@ export default function MoodCalendar() {
 
           return (
             <View key={cell.key} style={s.cellOuter}>
-              <View style={[
-                s.cellInner,
-                { backgroundColor: bg },
-                isToday && !m && s.todayOutline,
-              ]}>
+              <TouchableOpacity
+                activeOpacity={entries.length > 0 ? 0.7 : 1}
+                onPress={() => entries.length > 0 && setSelectedDay({ day, entries })}
+                style={[
+                  s.cellInner,
+                  { backgroundColor: bg },
+                  isToday && !m && s.todayOutline,
+                ]}
+              >
+                {entries.length > 1 && (
+                  <View style={s.multiDot} />
+                )}
                 {m ? (
                   <Text style={s.cellEmoji}>{m.emoji}</Text>
                 ) : (
@@ -139,7 +168,7 @@ export default function MoodCalendar() {
                     {day}
                   </Text>
                 )}
-              </View>
+              </TouchableOpacity>
             </View>
           );
         })}
@@ -150,10 +179,66 @@ export default function MoodCalendar() {
         {Object.entries(MOODS).map(([key, val]) => (
           <View key={key} style={s.legendItem}>
             <View style={[s.legendDot, { backgroundColor: val.color }]} />
-            <Text style={s.legendLabel}>{val.emoji} {key}</Text>
+            <Text style={s.legendLabel}>{val.emoji} {val.label}</Text>
           </View>
         ))}
       </View>
+
+      {/* Day detail bottom sheet */}
+      <Modal
+        visible={!!selectedDay}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedDay(null)}
+      >
+        <TouchableOpacity
+          style={s.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSelectedDay(null)}
+        />
+        <View style={s.sheet}>
+          <View style={s.sheetHandle} />
+
+          {selectedDay && (
+            <>
+              <Text style={s.sheetDate}>
+                {formatFullDate(viewYear, viewMonth, selectedDay.day)}
+              </Text>
+              <Text style={s.sheetSub}>
+                {selectedDay.entries.length} mood{selectedDay.entries.length !== 1 ? "s" : ""} logged
+              </Text>
+
+              <ScrollView
+                style={{ maxHeight: 340 }}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 8 }}
+              >
+                {/* Show newest first */}
+                {[...selectedDay.entries].reverse().map((entry, i) => {
+                  const meta = MOODS[entry.mood] || { color: "#888", emoji: "❓", label: entry.mood };
+                  return (
+                    <View key={entry._id || i} style={s.entryCard}>
+                      <View style={[s.entryAccent, { backgroundColor: meta.color }]} />
+                      <View style={s.entryBody}>
+                        <View style={s.entryTop}>
+                          <Text style={s.entryEmoji}>{meta.emoji}</Text>
+                          <Text style={[s.entryMood, { color: meta.color }]}>{meta.label}</Text>
+                          <Text style={s.entryTime}>{formatTime(entry.createdAt)}</Text>
+                        </View>
+                        {entry.note ? (
+                          <Text style={s.entryNote}>{entry.note}</Text>
+                        ) : (
+                          <Text style={s.entryNoNote}>No note added</Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -239,10 +324,7 @@ const s = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  dayLabels: {
-    flexDirection: "row",
-    marginBottom: 4,
-  },
+  dayLabels: { flexDirection: "row", marginBottom: 4 },
   dayLabel: {
     width: `${100 / 7}%`,
     textAlign: "center",
@@ -269,6 +351,7 @@ const s = StyleSheet.create({
     borderRadius: 7,
     justifyContent: "center",
     alignItems: "center",
+    position: "relative",
   },
   todayOutline: {
     borderWidth: 1.5,
@@ -276,6 +359,16 @@ const s = StyleSheet.create({
   },
   cellEmoji: { fontSize: 14, lineHeight: 18 },
   cellDay: { fontSize: 10, fontWeight: "600" },
+  // Small dot in top-right corner when a day has multiple mood entries
+  multiDot: {
+    position: "absolute",
+    top: 3,
+    right: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.8)",
+  },
 
   legend: {
     flexDirection: "row",
@@ -286,19 +379,94 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.08)",
   },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  legendDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendDot: { width: 9, height: 9, borderRadius: 5 },
   legendLabel: {
     fontSize: 11,
     color: "rgba(255,255,255,0.48)",
     fontWeight: "500",
+  },
+
+  /* ── Bottom sheet modal ── */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  sheet: {
+    backgroundColor: "#1E2037",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === "ios" ? 34 : 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  sheetDate: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#fff",
+    marginBottom: 4,
+  },
+  sheetSub: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.4)",
+    marginBottom: 16,
+    fontWeight: "500",
+  },
+
+  entryCard: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 14,
+    marginBottom: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  entryAccent: {
+    width: 4,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+  },
+  entryBody: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  entryTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  entryEmoji: { fontSize: 18 },
+  entryMood: {
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+  },
+  entryTime: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.35)",
+    fontWeight: "500",
+  },
+  entryNote: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.7)",
+    lineHeight: 19,
+  },
+  entryNoNote: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.25)",
+    fontStyle: "italic",
   },
 });
