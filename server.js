@@ -30,6 +30,7 @@ const appointmentRoutes = require('./routes/appointmentRoutes');
 const moodRoutes = require('./routes/moodRoutes');
 const userRoutes = require('./routes/userRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const messageRoutes = require('./routes/messageRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/assessment', assessmentRoutes);
@@ -37,6 +38,7 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/moods', moodRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/messages', messageRoutes);
 
 // 🔥 TEST ROUTE
 app.get('/', (req, res) => {

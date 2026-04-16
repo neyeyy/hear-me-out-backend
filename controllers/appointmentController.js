@@ -1,6 +1,82 @@
 const Appointment = require('../models/Appointment');
 const Assessment = require('../models/Assessment');
 
+/* ── Scheduling helpers ──────────────────────────────────────
+   Office hours: Mon–Fri, 9:00–11:30 and 13:00–15:30 (30-min slots)
+   Lunch break:  12:00–12:59 → no appointments
+─────────────────────────────────────────────────────────────── */
+const TIME_SLOTS = [
+  { h: 9,  m: 0  }, { h: 9,  m: 30 },
+  { h: 10, m: 0  }, { h: 10, m: 30 },
+  { h: 11, m: 0  }, { h: 11, m: 30 },
+  // 12:00–12:59 = lunch break (skipped)
+  { h: 13, m: 0  }, { h: 13, m: 30 },
+  { h: 14, m: 0  }, { h: 14, m: 30 },
+  { h: 15, m: 0  }, { h: 15, m: 30 },
+];
+
+function skipToWeekday(date) {
+  const d = new Date(date);
+  const dow = d.getDay(); // 0=Sun, 6=Sat
+  if (dow === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+  if (dow === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+  return d;
+}
+
+async function findNextAvailableSlot(daysFromNow) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let candidate = new Date(today);
+  candidate.setDate(today.getDate() + daysFromNow);
+  candidate = skipToWeekday(candidate);
+
+  for (let attempt = 0; attempt < 21; attempt++) {
+    const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+
+    const existing = await Appointment.find({
+      scheduleDate: { $gte: dayStart, $lte: dayEnd },
+      status: { $in: ['PENDING', 'ONGOING'] },
+    });
+
+    const booked = new Set(existing.map(a => {
+      const d = new Date(a.scheduleDate);
+      return `${d.getHours()}:${d.getMinutes()}`;
+    }));
+
+    for (const slot of TIME_SLOTS) {
+      if (!booked.has(`${slot.h}:${slot.m}`)) {
+        const result = new Date(candidate);
+        result.setHours(slot.h, slot.m, 0, 0);
+        return result;
+      }
+    }
+
+    // All slots taken — try next workday
+    candidate.setDate(candidate.getDate() + 1);
+    candidate = skipToWeekday(candidate);
+  }
+
+  // Fallback: use base date at 9 AM
+  const fallback = skipToWeekday(new Date(today));
+  fallback.setDate(today.getDate() + daysFromNow);
+  fallback.setHours(9, 0, 0, 0);
+  return fallback;
+}
+
+function isValidScheduleSlot(date) {
+  const d = new Date(date);
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return false; // weekend
+  const h = d.getHours(); const m = d.getMinutes();
+  if (h < 9 || h >= 16) return false;       // outside hours
+  if (h === 12) return false;                // lunch break
+  // must be on a 30-min mark
+  if (m !== 0 && m !== 30) return false;
+  return true;
+}
+
 
 // 🧠 CREATE ASSESSMENT (NOW WITH AUTO APPOINTMENT)
 exports.createAssessment = async (req, res) => {
@@ -45,8 +121,7 @@ exports.createAssessment = async (req, res) => {
 
       if (!existing) {
 
-        const scheduleDate = new Date();
-        scheduleDate.setDate(scheduleDate.getDate() + 1);
+        const scheduleDate = await findNextAvailableSlot(1);
 
         const appointment = await Appointment.create({
           studentId,
@@ -138,16 +213,8 @@ exports.createAppointment = async (req, res) => {
       assignedTo = "Review Needed";
     }
 
-    const today = new Date();
-    let scheduleDate = new Date(today);
-
-    if (severity === "HIGH") {
-      scheduleDate.setDate(today.getDate() + 1);
-    } else if (severity === "MEDIUM") {
-      scheduleDate.setDate(today.getDate() + 3);
-    } else {
-      scheduleDate.setDate(today.getDate() + 5);
-    }
+    const daysOut = severity === "HIGH" ? 1 : severity === "MEDIUM" ? 3 : 5;
+    const scheduleDate = await findNextAvailableSlot(daysOut);
 
     const appointment = await Appointment.create({
       studentId,
@@ -239,37 +306,41 @@ exports.getMyAppointment = async (req, res) => {
 };
 
 
-// 🔄 UPDATE STATUS (FIXED ENUM)
+// 🔄 UPDATE STATUS + OPTIONAL RESCHEDULE
 exports.updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, scheduleDate } = req.body;
 
-    const allowedStatus = ["PENDING", "ONGOING", "DONE"];
+    const update = {};
 
-    if (!allowedStatus.includes(status)) {
-      return res.json({
-        success: false,
-        message: "Invalid status"
-      });
+    if (status !== undefined) {
+      const allowedStatus = ["PENDING", "ONGOING", "DONE"];
+      if (!allowedStatus.includes(status)) {
+        return res.json({ success: false, message: "Invalid status" });
+      }
+      update.status = status;
     }
 
-    const appointment = await Appointment.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    );
+    if (scheduleDate !== undefined) {
+      const d = new Date(scheduleDate);
+      if (isNaN(d.getTime())) {
+        return res.json({ success: false, message: "Invalid date" });
+      }
+      if (!isValidScheduleSlot(d)) {
+        return res.json({ success: false, message: "Must be a weekday (Mon–Fri), 9 AM–4 PM, outside the 12–1 PM lunch break, on a 30-minute mark." });
+      }
+      update.scheduleDate = d;
+    }
 
-    res.json({
-      success: true,
-      message: "Appointment status updated",
-      appointment
-    });
+    if (Object.keys(update).length === 0) {
+      return res.json({ success: false, message: "Nothing to update" });
+    }
+
+    const appointment = await Appointment.findByIdAndUpdate(id, update, { new: true });
+    res.json({ success: true, message: "Appointment updated", appointment });
 
   } catch (error) {
-    res.json({
-      success: false,
-      message: error.message
-    });
+    res.json({ success: false, message: error.message });
   }
 };
