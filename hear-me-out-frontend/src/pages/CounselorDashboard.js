@@ -80,6 +80,10 @@ export default function CounselorDashboard() {
   const [chatInput,      setChatInput]      = useState("");
   const [chatTyping,     setChatTyping]     = useState(false);
   const [chatSearch,     setChatSearch]     = useState("");
+  // notifications
+  const [notifOpen,      setNotifOpen]      = useState(false);
+  const [notifs,         setNotifs]         = useState([]);   // persistent feed, newest first
+  const notifSeenRef     = useRef(new Set()); // tracks apptId+status keys already processed
   const chatEndRef       = useRef(null);
   const chatRoomRef      = useRef(null);
   const schedInitRef     = useRef(false);
@@ -123,6 +127,43 @@ export default function CounselorDashboard() {
       setAnalytics(res.data);
     } catch (e) { console.log(e); }
   };
+
+  // Check for new/changed appointments and push to the TOP of the feed
+  const checkNotifications = useCallback(() => {
+    const now = new Date();
+    const incoming = [];
+
+    apptList.forEach(a => {
+      if (!a.scheduleDate) return;
+      // Key = id + status so a status change (e.g. PENDING→ONGOING) re-notifies
+      const key = `${a._id}_${a.status}`;
+      if (notifSeenRef.current.has(key)) return;
+      notifSeenRef.current.add(key);
+
+      const apptTime = new Date(a.scheduleDate);
+      const diffMin  = Math.round((apptTime - now) / 60000);
+      const name     = typeof a.studentId === "object" ? (a.studentId.name || "Student") : "Student";
+
+      let type = "scheduled";
+      if (a.status === "ONGOING") type = "ongoing";
+      else if (a.status === "DONE") type = "done";
+      else if (diffMin >= 0 && diffMin <= 15) type = "now";
+      else if (diffMin > 15 && diffMin <= 60) type = "soon";
+
+      incoming.push({ id: key, appt: a, name, addedAt: new Date(), type });
+    });
+
+    if (incoming.length > 0) {
+      // Newest at the top — prepend incoming (sorted newest-first within batch)
+      setNotifs(prev => [...incoming.reverse(), ...prev]);
+    }
+  }, [apptList]);
+
+  useEffect(() => {
+    checkNotifications();
+    const iv = setInterval(checkNotifications, 60000);
+    return () => clearInterval(iv);
+  }, [checkNotifications]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -399,6 +440,20 @@ export default function CounselorDashboard() {
             </button>
           ))}
         </nav>
+
+        {/* Notification bell */}
+        <button
+          onClick={() => setNotifOpen(o => !o)}
+          style={{ ...s.notifBellBtn, background: notifOpen ? "rgba(255,255,255,0.13)" : "transparent" }}
+        >
+          <span style={{ fontSize: "18px" }}>🔔</span>
+          <span style={{ flex: 1, fontSize: "13px", color: "rgba(255,255,255,0.75)", fontFamily: "'Poppins',sans-serif" }}>
+            Notifications
+          </span>
+          {notifs.length > 0 && (
+            <span style={s.notifBadge}>{notifs.length > 99 ? "99+" : notifs.length}</span>
+          )}
+        </button>
 
         <div style={s.sideBottom}>
           <div style={s.profileRow}>
@@ -963,6 +1018,16 @@ export default function CounselorDashboard() {
           const isToday = (d) => d.toDateString() === new Date().toDateString();
           const studentName = (appt) => typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "Student";
 
+          // How urgent is an appointment chip
+          const chipUrgency = (appt) => {
+            if (!appt.scheduleDate || appt.status === "DONE") return null;
+            const diffMin = Math.round((new Date(appt.scheduleDate) - new Date()) / 60000);
+            if (diffMin < 0 && diffMin > -120) return "overdue";
+            if (diffMin >= 0 && diffMin <= 15) return "now";
+            if (diffMin > 15 && diffMin <= 60) return "soon";
+            return null;
+          };
+
           return (
             <>
               <div style={{ ...s.card, margin: 0, borderRadius: 0, minHeight: "100vh", boxShadow: "none" }}>
@@ -1007,21 +1072,34 @@ export default function CounselorDashboard() {
                           const appt = findApptInSlot(d, slot);
                           return (
                             <div key={di} style={{ ...s.calSlot, background: isToday(d) ? "rgba(91,107,216,0.02)" : undefined }}>
-                              {appt && (
-                                <div
-                                  style={{ ...s.apptChip, borderLeftColor: SEV_COLOR[appt.severity] || "#5B6BD8" }}
-                                  onClick={() => openReschedule(appt)}
-                                  title="Click to reschedule"
-                                >
-                                  <div style={s.apptChipName}>{studentName(appt)}</div>
-                                  <div style={{ ...s.apptChipMeta, color: SEV_COLOR[appt.severity] }}>
-                                    {appt.severity}
+                              {appt && (() => {
+                                const urg = chipUrgency(appt);
+                                const urgColor = urg === "overdue" ? "#F87171" : urg === "now" ? "#F87171" : urg === "soon" ? "#F9A72B" : null;
+                                return (
+                                  <div
+                                    style={{
+                                      ...s.apptChip,
+                                      borderLeftColor: SEV_COLOR[appt.severity] || "#5B6BD8",
+                                      boxShadow: urg === "now" ? "0 0 0 2px #F8717155" : urg === "overdue" ? "0 0 0 2px #F8717133" : undefined,
+                                    }}
+                                    onClick={() => openReschedule(appt)}
+                                    title="Click to reschedule"
+                                  >
+                                    {urg && (
+                                      <div style={{ fontSize: "9px", fontWeight: "700", color: urgColor, marginBottom: "2px", letterSpacing: "0.04em" }}>
+                                        {urg === "now" || urg === "overdue" ? "🔴" : "⚡"} {urg.toUpperCase()}
+                                      </div>
+                                    )}
+                                    <div style={s.apptChipName}>{studentName(appt)}</div>
+                                    <div style={{ ...s.apptChipMeta, color: SEV_COLOR[appt.severity] }}>
+                                      {appt.severity}
+                                    </div>
+                                    <div style={{ ...s.apptChipMeta, color: appt.status === "DONE" ? "#38C9B8" : appt.status === "ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
+                                      {appt.status}
+                                    </div>
                                   </div>
-                                  <div style={{ ...s.apptChipMeta, color: appt.status === "DONE" ? "#38C9B8" : appt.status === "ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
-                                    {appt.status}
-                                  </div>
-                                </div>
-                              )}
+                                );
+                              })()}
                             </div>
                           );
                         })}
@@ -1280,6 +1358,109 @@ export default function CounselorDashboard() {
           );
         })()}
       </main>
+
+      {/* ══════════ NOTIFICATION PANEL ══════════ */}
+      {notifOpen && (
+        <>
+          <div onClick={() => setNotifOpen(false)} style={s.notifBackdrop} />
+          <div style={s.notifPanel}>
+            <div style={s.notifPanelHeader}>
+              <div>
+                <div style={s.notifPanelTitle}>🔔 Notifications</div>
+                <div style={s.notifPanelSub}>{notifs.length} total · newest on top</div>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                {notifs.length > 0 && (
+                  <button
+                    onClick={() => { notifSeenRef.current = new Set(); setNotifs([]); }}
+                    style={{ ...s.notifClose, width: "auto", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", fontFamily: "'Poppins',sans-serif" }}
+                  >
+                    Clear all
+                  </button>
+                )}
+                <button onClick={() => setNotifOpen(false)} style={s.notifClose}>✕</button>
+              </div>
+            </div>
+
+            <div style={s.notifList}>
+              {notifs.length === 0 ? (
+                <div style={s.notifEmpty}>
+                  <span style={{ fontSize: "36px" }}>✅</span>
+                  <p style={s.notifEmptyText}>No notifications yet</p>
+                </div>
+              ) : notifs.map(n => {
+                // Compute live urgency from current time
+                const now      = new Date();
+                const apptTime = new Date(n.appt.scheduleDate);
+                const diffMin  = Math.round((apptTime - now) / 60000);
+                const sameDay  = apptTime.toDateString() === now.toDateString();
+
+                const urgency = n.type === "done"    ? "done"
+                  : n.type === "ongoing"             ? "ongoing"
+                  : n.appt.status === "DONE"         ? "done"
+                  : n.appt.status === "ONGOING"      ? "ongoing"
+                  : diffMin < 0 && sameDay           ? "overdue"
+                  : diffMin >= 0 && diffMin <= 15    ? "now"
+                  : diffMin > 15 && diffMin <= 60    ? "soon"
+                  : "scheduled";
+
+                const meta = {
+                  done:      { color: "#38C9B8", bg: "#E6FAF7", icon: "✅", label: "Session done" },
+                  ongoing:   { color: "#5B6BD8", bg: "#EEF0FD", icon: "🔄", label: "Session ongoing" },
+                  overdue:   { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: `Overdue ${Math.abs(diffMin)}m ago` },
+                  now:       { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: diffMin <= 0 ? "Starting NOW" : `In ${diffMin} min` },
+                  soon:      { color: "#F9A72B", bg: "#FFF8EC", icon: "⚡", label: `In ${diffMin} min` },
+                  scheduled: { color: "#5B6BD8", bg: "#EEF0FD", icon: "📅", label: apptTime.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) },
+                }[urgency];
+
+                // Relative time since the notification was added
+                const secAgo = Math.floor((now - new Date(n.addedAt)) / 1000);
+                const relAge = secAgo < 60 ? "just now"
+                  : secAgo < 3600 ? `${Math.floor(secAgo / 60)}m ago`
+                  : secAgo < 86400 ? `${Math.floor(secAgo / 3600)}h ago`
+                  : new Date(n.addedAt).toLocaleDateString();
+
+                return (
+                  <div key={n.id} style={{ ...s.notifItem, borderLeft: `4px solid ${meta.color}` }}>
+                    <div style={s.notifItemTop}>
+                      <span style={s.notifItemName}>{n.name}</span>
+                      <span style={{ ...s.notifItemTag, background: meta.bg, color: meta.color }}>
+                        {meta.icon} {meta.label}
+                      </span>
+                    </div>
+                    <div style={s.notifItemMeta}>
+                      <span style={{ ...s.notifItemSev, color: SEV_COLOR[n.appt.severity] }}>
+                        {n.appt.severity}
+                      </span>
+                      <span style={s.notifItemTime}>{relAge}</span>
+                    </div>
+                    <div style={s.notifItemActions}>
+                      <button
+                        onClick={() => { setNotifOpen(false); setTab("schedule"); }}
+                        style={s.notifActionBtn}
+                      >
+                        View Schedule →
+                      </button>
+                      <button
+                        onClick={() => {
+                          const st = students.find(s => String(s._id) === String(
+                            typeof n.appt.studentId === "object" ? n.appt.studentId._id : n.appt.studentId
+                          ));
+                          if (st) openChat(st);
+                          setNotifOpen(false);
+                        }}
+                        style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}
+                      >
+                        💬 Chat
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2002,5 +2183,196 @@ const s = {
     display: "flex", alignItems: "center", justifyContent: "center",
     boxShadow: "0 4px 12px rgba(91,107,216,0.35)",
     transition: "opacity 0.2s", flexShrink: 0,
+  },
+
+  /* ── Notification bell in sidebar ── */
+  notifBellBtn: {
+    display: "flex", alignItems: "center", gap: "12px",
+    padding: "11px 14px",
+    margin: "0 10px 6px",
+    borderRadius: "10px",
+    border: "none",
+    cursor: "pointer",
+    transition: "all 0.18s",
+    textAlign: "left",
+    width: "calc(100% - 20px)",
+  },
+  notifBadge: {
+    background: "#F87171",
+    color: "#fff",
+    fontSize: "10px",
+    fontWeight: "700",
+    padding: "2px 7px",
+    borderRadius: "99px",
+    fontFamily: "'Poppins',sans-serif",
+    flexShrink: 0,
+  },
+
+  /* ── Notification panel ── */
+  notifBackdrop: {
+    position: "fixed", inset: 0,
+    background: "rgba(0,0,0,0.25)",
+    zIndex: 199,
+  },
+  notifPanel: {
+    position: "fixed",
+    top: 0, right: 0, bottom: 0,
+    width: "360px",
+    background: "#fff",
+    boxShadow: "-4px 0 32px rgba(0,0,0,0.12)",
+    zIndex: 200,
+    display: "flex", flexDirection: "column",
+    overflow: "hidden",
+  },
+  notifPanelHeader: {
+    display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+    padding: "22px 20px 16px",
+    borderBottom: "1px solid #F0F2F8",
+    background: "linear-gradient(135deg,#1E2140,#2D3166)",
+  },
+  notifPanelTitle: {
+    fontSize: "16px", fontWeight: "700",
+    color: "#fff",
+    fontFamily: "'Poppins',sans-serif",
+    marginBottom: "4px",
+  },
+  notifPanelSub: {
+    fontSize: "12px", color: "rgba(255,255,255,0.5)",
+    fontFamily: "'Lato',sans-serif",
+  },
+  notifClose: {
+    background: "rgba(255,255,255,0.1)", border: "none",
+    color: "#fff", cursor: "pointer",
+    width: "28px", height: "28px",
+    borderRadius: "50%",
+    fontSize: "14px", fontWeight: "700",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
+  },
+  notifList: {
+    flex: 1, overflowY: "auto",
+    padding: "14px",
+    display: "flex", flexDirection: "column", gap: "10px",
+    background: "#F9FAFB",
+  },
+  notifEmpty: {
+    display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center",
+    padding: "48px 20px", gap: "12px",
+  },
+  notifEmptyText: {
+    fontSize: "14px", color: "#A8AECB",
+    fontFamily: "'Poppins',sans-serif",
+    fontWeight: "600", margin: 0, textAlign: "center",
+  },
+  notifItem: {
+    background: "#fff",
+    borderRadius: "12px",
+    padding: "14px 14px 14px 16px",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
+    borderLeft: "4px solid #5B6BD8",
+  },
+  notifItemTop: {
+    display: "flex", alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    marginBottom: "6px",
+  },
+  notifItemName: {
+    fontSize: "14px", fontWeight: "700",
+    color: "#2D3047",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  notifItemTag: {
+    fontSize: "10px", fontWeight: "700",
+    padding: "3px 8px", borderRadius: "99px",
+    fontFamily: "'Poppins',sans-serif",
+    flexShrink: 0,
+  },
+  notifItemMeta: {
+    display: "flex", alignItems: "center", gap: "10px",
+    marginBottom: "10px",
+  },
+  notifItemSev: {
+    fontSize: "11px", fontWeight: "700",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  notifItemTime: {
+    fontSize: "11px", color: "#A8AECB",
+    fontFamily: "'Lato',sans-serif",
+  },
+  notifItemActions: {
+    display: "flex", gap: "8px",
+  },
+  notifActionBtn: {
+    padding: "6px 12px",
+    background: "#F0F2F8",
+    color: "#5B6BD8",
+    border: "none", borderRadius: "8px",
+    fontSize: "12px", fontWeight: "600",
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+  },
+
+  /* ── Today's appointments strip (schedule tab) ── */
+  todayStrip: {
+    background: "linear-gradient(135deg,#1E2140,#2D3166)",
+    padding: "14px 24px",
+    display: "flex", alignItems: "center", gap: "20px",
+    flexWrap: "wrap",
+    borderBottom: "1px solid rgba(255,255,255,0.08)",
+  },
+  todayStripLeft: {
+    display: "flex", alignItems: "center", gap: "10px",
+    flexShrink: 0,
+  },
+  todayStripIcon: { fontSize: "20px" },
+  todayStripTitle: {
+    fontSize: "15px", fontWeight: "700",
+    color: "#fff", fontFamily: "'Poppins',sans-serif",
+  },
+  todayStripCount: {
+    fontSize: "11px", fontWeight: "600",
+    color: "rgba(255,255,255,0.45)",
+    fontFamily: "'Poppins',sans-serif",
+    background: "rgba(255,255,255,0.08)",
+    padding: "2px 8px", borderRadius: "99px",
+  },
+  todayStripCards: {
+    display: "flex", gap: "8px",
+    flex: 1, overflowX: "auto",
+    paddingBottom: "4px",
+  },
+  todayCard: {
+    background: "rgba(255,255,255,0.07)",
+    border: "1.5px solid rgba(255,255,255,0.15)",
+    borderRadius: "10px",
+    padding: "8px 12px",
+    minWidth: "120px",
+    flexShrink: 0,
+    cursor: "default",
+  },
+  todayUrgBadge: {
+    display: "inline-flex", alignItems: "center", gap: "3px",
+    fontSize: "9px", fontWeight: "700",
+    padding: "2px 6px", borderRadius: "99px",
+    fontFamily: "'Poppins',sans-serif",
+    marginBottom: "4px",
+  },
+  todayCardName: {
+    fontSize: "12px", fontWeight: "700",
+    color: "#fff", fontFamily: "'Poppins',sans-serif",
+    whiteSpace: "nowrap", overflow: "hidden",
+    textOverflow: "ellipsis", maxWidth: "120px",
+  },
+  todayCardSev: {
+    fontSize: "10px", fontWeight: "600",
+    fontFamily: "'Poppins',sans-serif",
+    marginTop: "2px",
+  },
+  todayCardTime: {
+    fontSize: "10px", color: "rgba(255,255,255,0.45)",
+    fontFamily: "'Poppins',sans-serif",
+    marginTop: "2px",
   },
 };
