@@ -58,6 +58,7 @@ export default function StudentDashboard() {
   const [newPw, setNewPw]         = useState("");
   const [conPw, setConPw]         = useState("");
   const [pwLoading, setPwLoading] = useState(false);
+  const [pwMsg,    setPwMsg]     = useState({ text:"", ok:false });
   const navigate = useNavigate();
 
   const userName  = localStorage.getItem("name")  || "Student";
@@ -98,20 +99,20 @@ export default function StudentDashboard() {
   };
 
   const handleChangePassword = async () => {
-    if (!curPw || !newPw || !conPw) { alert("Please fill in all fields."); return; }
-    if (newPw !== conPw) { alert("New passwords do not match."); return; }
-    if (newPw.length < 6) { alert("New password must be at least 6 characters."); return; }
+    if (!curPw || !newPw || !conPw) { setPwMsg({ text:"Please fill in all fields.", ok:false }); return; }
+    if (newPw !== conPw)            { setPwMsg({ text:"New passwords do not match.", ok:false }); return; }
+    if (newPw.length < 6)           { setPwMsg({ text:"Password must be at least 6 characters.", ok:false }); return; }
     try {
-      setPwLoading(true);
+      setPwLoading(true); setPwMsg({ text:"", ok:false });
       const res = await API.patch("/auth/change-password", { currentPassword: curPw, newPassword: newPw });
       if (res.data.success) {
-        alert("Password changed successfully!");
+        setPwMsg({ text:"Password changed successfully!", ok:true });
         setCurPw(""); setNewPw(""); setConPw("");
       } else {
-        alert(res.data.message || "Failed to change password.");
+        setPwMsg({ text: res.data.message || "Failed to change password.", ok:false });
       }
     } catch (e) {
-      alert(e.response?.data?.message || "Error changing password.");
+      setPwMsg({ text: e.response?.data?.message || "Error changing password.", ok:false });
     } finally { setPwLoading(false); }
   };
 
@@ -366,6 +367,11 @@ export default function StudentDashboard() {
                   />
                 </div>
               ))}
+              {pwMsg.text && (
+                <div style={{ fontSize:"13px", fontWeight:600, textAlign:"center", color: pwMsg.ok ? "#38C9B8" : "#F87171" }}>
+                  {pwMsg.text}
+                </div>
+              )}
               <button
                 onClick={handleChangePassword}
                 disabled={pwLoading}

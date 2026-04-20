@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Animated, SafeAreaView, StatusBar, TextInput,
-  KeyboardAvoidingView, Platform, Alert, Modal, ActivityIndicator, Image,
+  KeyboardAvoidingView, Platform, Modal, ActivityIndicator, Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -51,6 +51,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [newPw,    setNewPw]    = useState("");
   const [conPw,    setConPw]    = useState("");
   const [pwLoad,   setPwLoad]   = useState(false);
+  const [pwMsg,    setPwMsg]    = useState({ text:"", ok:false });
 
   // refs
   const prevApptRef   = useRef(null);
@@ -182,20 +183,20 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   /* ─── change password ── */
   const handleChangePassword = async () => {
-    if (!curPw || !newPw || !conPw) { Alert.alert("Oops", "Please fill in all fields."); return; }
-    if (newPw !== conPw) { Alert.alert("Oops", "New passwords do not match."); return; }
-    if (newPw.length < 6) { Alert.alert("Oops", "Password must be at least 6 characters."); return; }
+    if (!curPw || !newPw || !conPw) { setPwMsg({ text:"Please fill in all fields.", ok:false }); return; }
+    if (newPw !== conPw)            { setPwMsg({ text:"New passwords do not match.", ok:false }); return; }
+    if (newPw.length < 6)           { setPwMsg({ text:"Password must be at least 6 characters.", ok:false }); return; }
     try {
-      setPwLoad(true);
+      setPwLoad(true); setPwMsg({ text:"", ok:false });
       const res = await API.patch("/auth/change-password", { currentPassword: curPw, newPassword: newPw });
       if (res.data.success) {
-        Alert.alert("Done!", "Password changed successfully.");
+        setPwMsg({ text:"Password changed successfully!", ok:true });
         setCurPw(""); setNewPw(""); setConPw("");
       } else {
-        Alert.alert("Failed", res.data.message || "Please try again.");
+        setPwMsg({ text: res.data.message || "Please try again.", ok:false });
       }
     } catch (e) {
-      Alert.alert("Error", e.response?.data?.message || "Something went wrong.");
+      setPwMsg({ text: e.response?.data?.message || "Something went wrong.", ok:false });
     } finally { setPwLoad(false); }
   };
 
@@ -611,6 +612,12 @@ export default function StudentDashboardScreen({ navigation, route }) {
                       />
                     </View>
                   ))}
+
+                  {!!pwMsg.text && (
+                    <Text style={{ color: pwMsg.ok ? "#4ECDC4" : "#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 }}>
+                      {pwMsg.text}
+                    </Text>
+                  )}
 
                   <TouchableOpacity
                     onPress={handleChangePassword}

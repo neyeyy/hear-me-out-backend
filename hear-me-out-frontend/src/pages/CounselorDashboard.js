@@ -72,6 +72,7 @@ export default function CounselorDashboard() {
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("09:00");
   const [rescheduling,   setRescheduling]   = useState(false);
+  const [rescheduleErr,  setRescheduleErr]  = useState("");
   // chat tab
   const [conversations,  setConversations]  = useState([]);
   const [chatRoom,       setChatRoom]       = useState(null);
@@ -82,8 +83,9 @@ export default function CounselorDashboard() {
   const [chatSearch,     setChatSearch]     = useState("");
   // notifications
   const [notifOpen,      setNotifOpen]      = useState(false);
-  const [notifs,         setNotifs]         = useState([]);   // persistent feed, newest first
-  const notifSeenRef     = useRef(new Set()); // tracks apptId+status keys already processed
+  const [notifs,         setNotifs]         = useState([]);
+  const [notifFilter,    setNotifFilter]    = useState("all");
+  const notifSeenRef     = useRef(new Set(JSON.parse(localStorage.getItem("notifSeen") || "[]")));
   const chatEndRef       = useRef(null);
   const chatRoomRef      = useRef(null);
   const schedInitRef     = useRef(false);
@@ -139,6 +141,7 @@ export default function CounselorDashboard() {
       const key = `${a._id}_${a.status}`;
       if (notifSeenRef.current.has(key)) return;
       notifSeenRef.current.add(key);
+      localStorage.setItem("notifSeen", JSON.stringify([...notifSeenRef.current]));
 
       const apptTime = new Date(a.scheduleDate);
       const diffMin  = Math.round((apptTime - now) / 60000);
@@ -265,7 +268,7 @@ export default function CounselorDashboard() {
   }, [chatRoom, loadConversations]);
 
   const handleComplete = async (appointmentId) => {
-    if (!window.confirm("Mark this session as completed?")) return;
+
     try {
       await API.patch(`/appointments/${appointmentId}`, { status: "DONE" });
       fetchAppointments();
@@ -331,16 +334,17 @@ export default function CounselorDashboard() {
   const handleReschedule = async () => {
     if (!rescheduleDate || !rescheduleTime) return;
     const dow = new Date(rescheduleDate + "T00:00:00").getDay();
-    if (dow === 0 || dow === 6) { alert("Please select a weekday (Mon–Fri)."); return; }
+    if (dow === 0 || dow === 6) { setRescheduleErr("Please select a weekday (Mon–Fri)."); return; }
+    setRescheduleErr("");
     try {
       setRescheduling(true);
       const dt = new Date(`${rescheduleDate}T${rescheduleTime}:00`);
       const res = await API.patch(`/appointments/${rescheduleAppt._id}`, { scheduleDate: dt });
-      if (!res.data.success) { alert(res.data.message || "Failed to reschedule."); return; }
+      if (!res.data.success) { setRescheduleErr(res.data.message || "Failed to reschedule."); return; }
       setRescheduleAppt(null);
       fetchAppointments();
     } catch (e) {
-      alert(e.response?.data?.message || "Error rescheduling.");
+      setRescheduleErr(e.response?.data?.message || "Error rescheduling.");
     } finally { setRescheduling(false); }
   };
 
@@ -1156,11 +1160,12 @@ export default function CounselorDashboard() {
                         ))}
                       </select>
                     </div>
-                    <div style={{ display:"flex", gap:"10px", marginTop:"22px" }}>
+                    {rescheduleErr && <div style={{ color:"#F87171", fontSize:"13px", fontWeight:600, textAlign:"center", marginTop:"10px" }}>{rescheduleErr}</div>}
+                    <div style={{ display:"flex", gap:"10px", marginTop:"14px" }}>
                       <button onClick={handleReschedule} disabled={rescheduling} style={s.modalSaveBtn}>
                         {rescheduling ? "Saving…" : "Save Schedule"}
                       </button>
-                      <button onClick={() => setRescheduleAppt(null)} style={s.modalCancelBtn}>Cancel</button>
+                      <button onClick={() => { setRescheduleAppt(null); setRescheduleErr(""); }} style={s.modalCancelBtn}>Cancel</button>
                     </div>
                   </div>
                 </div>
@@ -1372,7 +1377,7 @@ export default function CounselorDashboard() {
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 {notifs.length > 0 && (
                   <button
-                    onClick={() => { notifSeenRef.current = new Set(); setNotifs([]); }}
+                    onClick={() => { setNotifs([]); setNotifFilter("all"); }}
                     style={{ ...s.notifClose, width: "auto", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", fontFamily: "'Poppins',sans-serif" }}
                   >
                     Clear all
@@ -1382,13 +1387,56 @@ export default function CounselorDashboard() {
               </div>
             </div>
 
+            {/* ── Filter pills ── */}
+            <div style={s.notifFilterBar}>
+              {[
+                { key: "all",      label: "All"         },
+                { key: "upcoming", label: "⚡ Upcoming" },
+                { key: "done",     label: "✅ Done"     },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setNotifFilter(f.key)}
+                  style={{
+                    ...s.notifFilterBtn,
+                    background: notifFilter === f.key ? "#5B6BD8" : "#F0F2F8",
+                    color:      notifFilter === f.key ? "#fff"    : "#7B7F9E",
+                    fontWeight: notifFilter === f.key ? "700"     : "500",
+                  }}
+                >{f.label}</button>
+              ))}
+            </div>
+
             <div style={s.notifList}>
-              {notifs.length === 0 ? (
-                <div style={s.notifEmpty}>
-                  <span style={{ fontSize: "36px" }}>✅</span>
-                  <p style={s.notifEmptyText}>No notifications yet</p>
-                </div>
-              ) : notifs.map(n => {
+              {(() => {
+                const getUrgency = n => {
+                  const now = new Date(), apptTime = new Date(n.appt.scheduleDate);
+                  const diffMin = Math.round((apptTime - now) / 60000);
+                  const sameDay = apptTime.toDateString() === now.toDateString();
+                  if (n.appt.status === "DONE")              return "done";
+                  if (n.appt.status === "ONGOING")           return "ongoing";
+                  if (diffMin < 0 && sameDay)                return "overdue";
+                  if (diffMin >= 0 && diffMin <= 15)         return "now";
+                  if (diffMin > 15 && diffMin <= 60)         return "soon";
+                  return "scheduled";
+                };
+
+                const filtered = notifs.filter(n => {
+                  if (notifFilter === "all")      return true;
+                  if (notifFilter === "new")      return n.type === "new";
+                  if (notifFilter === "upcoming") return n.type === "soon" || n.type === "now";
+                  if (notifFilter === "done")     return n.type === "done" || n.type === "ongoing";
+                  return true;
+                });
+
+                if (filtered.length === 0) return (
+                  <div style={s.notifEmpty}>
+                    <span style={{ fontSize: "36px" }}>{notifs.length === 0 ? "🔔" : "🔍"}</span>
+                    <p style={s.notifEmptyText}>{notifs.length === 0 ? "No notifications yet" : "Nothing here"}</p>
+                  </div>
+                );
+
+                return filtered.map(n => {
                 // Compute live urgency from current time
                 const now      = new Date();
                 const apptTime = new Date(n.appt.scheduleDate);
@@ -1456,7 +1504,8 @@ export default function CounselorDashboard() {
                     </div>
                   </div>
                 );
-              })}
+                }); // end filtered.map
+              })(/* end IIFE */)}
             </div>
           </div>
         </>
@@ -2312,6 +2361,20 @@ const s = {
     fontSize: "12px", fontWeight: "600",
     cursor: "pointer",
     fontFamily: "'Poppins',sans-serif",
+  },
+  notifFilterBar: {
+    display: "flex", gap: "6px", flexWrap: "wrap",
+    padding: "10px 14px",
+    background: "#fff",
+    borderBottom: "1px solid #EEF0FD",
+    flexShrink: 0,
+  },
+  notifFilterBtn: {
+    padding: "5px 14px",
+    border: "none", borderRadius: "99px",
+    fontSize: "11px", cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+    transition: "all 0.15s",
   },
 
   /* ── Today's appointments strip (schedule tab) ── */

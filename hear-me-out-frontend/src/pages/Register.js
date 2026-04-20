@@ -9,21 +9,22 @@ export default function Register() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [focused, setFocused]   = useState(null);
+  const [error,   setError]     = useState("");
   const navigate = useNavigate();
 
   const handleRegister = async () => {
-    if (!name || !email || !password) { alert("Please fill in all fields."); return; }
+    if (!name || !email || !password) { setError("Please fill in all fields."); return; }
+    setError("");
     try {
       setLoading(true);
       const res = await API.post("/auth/register", { name, email, password });
       if (res.data.success) {
-        alert("Account created! Please sign in.");
         navigate("/");
       } else {
-        alert(res.data.message || "Registration failed.");
+        setError(res.data.message || "Registration failed.");
       }
     } catch (err) {
-      alert(err.response?.data?.message || "Registration failed.");
+      setError(err.response?.data?.message || "Registration failed.");
     } finally { setLoading(false); }
   };
 
@@ -69,6 +70,8 @@ export default function Register() {
               </div>
             </div>
           ))}
+
+          {error && <div style={{ color:"#F87171", fontSize:"13px", fontWeight:600, textAlign:"center", marginTop:"-6px" }}>{error}</div>}
 
           <button
             onClick={handleRegister}

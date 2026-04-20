@@ -8,6 +8,7 @@ export default function Login() {
   const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [focused, setFocused]   = useState(null);
+  const [error,   setError]     = useState("");
   const navigate = useNavigate();
 
   // Auto-redirect if already logged in
@@ -26,13 +27,14 @@ export default function Login() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = async () => {
-    if (!email || !password) { alert("Please enter your email and password."); return; }
+    if (!email || !password) { setError("Please enter your email and password."); return; }
+    setError("");
     try {
       setLoading(true);
       const res = await API.post("/auth/login", { email, password });
-      if (!res.data.token) { alert("Login failed: no token received."); return; }
+      if (!res.data.token) { setError("Login failed. Please try again."); return; }
       const user = res.data.user;
-      if (!user?.role || !user?.id) { alert("Login error: user data missing."); return; }
+      if (!user?.role || !user?.id) { setError("Login error. Please try again."); return; }
       localStorage.setItem("token",  res.data.token);
       localStorage.setItem("role",   user.role);
       localStorage.setItem("userId", user.id);
@@ -47,7 +49,7 @@ export default function Login() {
         navigate("/admin");
       }
     } catch (err) {
-      alert(err.response?.data?.message || "Login failed.");
+      setError(err.response?.data?.message || "Invalid email or password.");
     } finally { setLoading(false); }
   };
 
@@ -106,6 +108,8 @@ export default function Login() {
               </span>
             </div>
           </div>
+
+          {error && <div style={{ color:"#F87171", fontSize:"13px", fontWeight:600, textAlign:"center" }}>{error}</div>}
 
           {/* Button */}
           <button

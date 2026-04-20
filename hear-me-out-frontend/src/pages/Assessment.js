@@ -93,7 +93,7 @@ function Assessment() {
       });
     } catch (err) {
       console.log(err);
-      alert("Error submitting assessment");
+      addBotMessage("⚠️ Error submitting assessment. Please try again.");
     }
   };
 

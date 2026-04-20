@@ -3,13 +3,15 @@ import API from "../services/api";
 
 function MoodForm() {
   const [mood, setMood] = useState("");
+  const [msg,  setMsg]  = useState({ text: "", ok: false });
 
   const submitMood = async () => {
     try {
       const res = await API.post("/moods", { mood });
-      alert(res.data.message);
+      setMsg({ text: res.data.message || "Mood submitted!", ok: true });
     } catch (err) {
       console.log(err);
+      setMsg({ text: "Failed to submit mood.", ok: false });
     }
   };
 
@@ -32,6 +34,12 @@ function MoodForm() {
         <option value="STRESSED">😫 Stressed</option>
         <option value="ANXIOUS">😰 Anxious</option>
       </select>
+
+      {msg.text && (
+        <div style={{ marginTop:"8px", fontSize:"13px", fontWeight:600, textAlign:"center", color: msg.ok ? "#4CAF50" : "#F87171" }}>
+          {msg.text}
+        </div>
+      )}
 
       <button
         style={{

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -13,27 +13,19 @@ export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
+  const [error, setError] = useState("");
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert("Oops", "Please enter your email and password.");
-      return;
-    }
-
+    if (!email || !password) { setError("Please enter your email and password."); return; }
+    setError("");
     try {
       setLoading(true);
       const res = await API.post("/auth/login", { email, password });
 
-      if (!res.data.token) {
-        Alert.alert("Login failed", "No token received.");
-        return;
-      }
+      if (!res.data.token) { setError("Login failed. Please try again."); return; }
 
       const user = res.data.user;
-      if (!user || !user.role || !user.id) {
-        Alert.alert("Login error", "User data is missing.");
-        return;
-      }
+      if (!user || !user.role || !user.id) { setError("Login error. Please try again."); return; }
 
       await AsyncStorage.multiSet([
         ["token", res.data.token],
@@ -56,7 +48,7 @@ export default function LoginScreen({ navigation }) {
         }
       }
     } catch (err) {
-      Alert.alert("Login failed", err.response?.data?.message || "Something went wrong.");
+      setError(err.response?.data?.message || "Invalid email or password.");
     } finally {
       setLoading(false);
     }
@@ -119,6 +111,8 @@ export default function LoginScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
+
+          {!!error && <Text style={{ color:"#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 }}>{error}</Text>}
 
           {/* Button */}
           <TouchableOpacity

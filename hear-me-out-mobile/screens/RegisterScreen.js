@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView,
+  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
@@ -13,26 +13,21 @@ export default function RegisterScreen({ navigation }) {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
+  const [error, setError] = useState("");
 
   const handleRegister = async () => {
-    if (!name || !email || !password) {
-      Alert.alert("Oops", "Please fill in all fields.");
-      return;
-    }
-
+    if (!name || !email || !password) { setError("Please fill in all fields."); return; }
+    setError("");
     try {
       setLoading(true);
       const res = await API.post("/auth/register", { name, email, password });
-
       if (res.data.success) {
-        Alert.alert("Welcome! 🎉", "Account created successfully!", [
-          { text: "Sign In", onPress: () => navigation.navigate("Login") },
-        ]);
+        navigation.navigate("Login");
       } else {
-        Alert.alert("Registration failed", res.data.message || "Please try again.");
+        setError(res.data.message || "Registration failed.");
       }
     } catch (err) {
-      Alert.alert("Error", err.response?.data?.message || "Registration failed.");
+      setError(err.response?.data?.message || "Registration failed.");
     } finally {
       setLoading(false);
     }
@@ -112,6 +107,8 @@ export default function RegisterScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {!!error && <Text style={{ color:"#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 }}>{error}</Text>}
 
             {/* Button */}
             <TouchableOpacity
