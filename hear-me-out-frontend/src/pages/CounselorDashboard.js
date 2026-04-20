@@ -582,23 +582,25 @@ export default function CounselorDashboard() {
                       <h2 style={s.cardTitle}>Schedule</h2>
                     </div>
                     {/* Week nav */}
-                    <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
-                      <button onClick={() => setOvWeekOffset(o => o - 1)} style={s.ovNavBtn}>←</button>
-                      <span
-                        style={{ ...s.ovWeekLabel, cursor:"pointer", display:"flex", alignItems:"center", gap:"4px", padding:"3px 10px", background:"#fff", borderRadius:"99px", border:"1.5px solid rgba(91,107,216,0.18)", boxShadow:"0 2px 6px rgba(91,107,216,0.08)" }}
-                        onClick={() => document.getElementById("ovCalPicker").showPicker?.() || document.getElementById("ovCalPicker").click()}
-                        title="Jump to date"
-                      ><span style={{ fontSize:"11px" }}>📅</span>{ovStart} – {ovEnd}</span>
-                      <input id="ovCalPicker" type="date" onChange={e => {
-                        if (!e.target.value) return;
-                        const picked = new Date(e.target.value + "T00:00:00");
-                        const today = new Date(); const d = today.getDay();
-                        const todayMon = new Date(today); todayMon.setDate(today.getDate() + (d === 0 ? -6 : 1 - d)); todayMon.setHours(0,0,0,0);
-                        const pd = picked.getDay();
-                        const pickedMon = new Date(picked); pickedMon.setDate(picked.getDate() + (pd === 0 ? -6 : 1 - pd)); pickedMon.setHours(0,0,0,0);
-                        setOvWeekOffset(Math.round((pickedMon - todayMon) / (7*24*60*60*1000)));
-                      }} style={{ position:"absolute", opacity:0, pointerEvents:"none", width:0, height:0 }} />
-                      <button onClick={() => setOvWeekOffset(o => o + 1)} style={s.ovNavBtn}>→</button>
+                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"6px" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                        <button onClick={() => setOvWeekOffset(o => o - 1)} style={s.ovNavBtn}>←</button>
+                        <span
+                          style={{ ...s.ovWeekLabel, cursor:"pointer", display:"flex", alignItems:"center", gap:"4px", padding:"3px 10px", background:"#fff", borderRadius:"99px", border:"1.5px solid rgba(91,107,216,0.18)", boxShadow:"0 2px 6px rgba(91,107,216,0.08)" }}
+                          onClick={() => document.getElementById("ovCalPicker").showPicker?.() || document.getElementById("ovCalPicker").click()}
+                          title="Jump to date"
+                        ><span style={{ fontSize:"11px" }}>📅</span>{ovStart} – {ovEnd}</span>
+                        <input id="ovCalPicker" type="date" onChange={e => {
+                          if (!e.target.value) return;
+                          const picked = new Date(e.target.value + "T00:00:00");
+                          const today = new Date(); const d = today.getDay();
+                          const todayMon = new Date(today); todayMon.setDate(today.getDate() + (d === 0 ? -6 : 1 - d)); todayMon.setHours(0,0,0,0);
+                          const pd = picked.getDay();
+                          const pickedMon = new Date(picked); pickedMon.setDate(picked.getDate() + (pd === 0 ? -6 : 1 - pd)); pickedMon.setHours(0,0,0,0);
+                          setOvWeekOffset(Math.round((pickedMon - todayMon) / (7*24*60*60*1000)));
+                        }} style={{ position:"absolute", opacity:0, pointerEvents:"none", width:0, height:0 }} />
+                        <button onClick={() => setOvWeekOffset(o => o + 1)} style={s.ovNavBtn}>→</button>
+                      </div>
                       {ovWeekOffset !== 0 && (
                         <button onClick={() => setOvWeekOffset(0)} style={s.ovTodayBtn}>Today</button>
                       )}
