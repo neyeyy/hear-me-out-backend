@@ -584,7 +584,20 @@ export default function CounselorDashboard() {
                     {/* Week nav */}
                     <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
                       <button onClick={() => setOvWeekOffset(o => o - 1)} style={s.ovNavBtn}>←</button>
-                      <span style={s.ovWeekLabel}>{ovStart} – {ovEnd}</span>
+                      <span
+                        style={{ ...s.ovWeekLabel, cursor:"pointer", display:"flex", alignItems:"center", gap:"4px", padding:"3px 10px", background:"#fff", borderRadius:"99px", border:"1.5px solid rgba(91,107,216,0.18)", boxShadow:"0 2px 6px rgba(91,107,216,0.08)" }}
+                        onClick={() => document.getElementById("ovCalPicker").showPicker?.() || document.getElementById("ovCalPicker").click()}
+                        title="Jump to date"
+                      ><span style={{ fontSize:"11px" }}>📅</span>{ovStart} – {ovEnd}</span>
+                      <input id="ovCalPicker" type="date" onChange={e => {
+                        if (!e.target.value) return;
+                        const picked = new Date(e.target.value + "T00:00:00");
+                        const today = new Date(); const d = today.getDay();
+                        const todayMon = new Date(today); todayMon.setDate(today.getDate() + (d === 0 ? -6 : 1 - d)); todayMon.setHours(0,0,0,0);
+                        const pd = picked.getDay();
+                        const pickedMon = new Date(picked); pickedMon.setDate(picked.getDate() + (pd === 0 ? -6 : 1 - pd)); pickedMon.setHours(0,0,0,0);
+                        setOvWeekOffset(Math.round((pickedMon - todayMon) / (7*24*60*60*1000)));
+                      }} style={{ position:"absolute", opacity:0, pointerEvents:"none", width:0, height:0 }} />
                       <button onClick={() => setOvWeekOffset(o => o + 1)} style={s.ovNavBtn}>→</button>
                       {ovWeekOffset !== 0 && (
                         <button onClick={() => setOvWeekOffset(0)} style={s.ovTodayBtn}>Today</button>
@@ -1038,8 +1051,21 @@ export default function CounselorDashboard() {
                 {/* Week nav header */}
                 <div style={s.weekNavBar}>
                   <button onClick={() => setWeekOffset(o => o - 1)} style={s.weekNavBtn}>← Prev</button>
-                  <div style={{ textAlign:"center" }}>
-                    <div style={s.weekTitle}>{weekStart} – {weekEnd}</div>
+                  <div style={{ textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center", gap:"6px", position:"relative" }}>
+                    <div
+                      style={{ ...s.weekTitle, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:"6px", padding:"5px 16px", background:"#fff", borderRadius:"99px", border:"1.5px solid rgba(91,107,216,0.18)", boxShadow:"0 2px 8px rgba(91,107,216,0.1)" }}
+                      onClick={() => document.getElementById("schedCalPicker").showPicker?.() || document.getElementById("schedCalPicker").click()}
+                      title="Jump to date"
+                    ><span style={{ fontSize:"14px" }}>📅</span>{weekStart} – {weekEnd}</div>
+                    <input id="schedCalPicker" type="date" onChange={e => {
+                      if (!e.target.value) return;
+                      const picked = new Date(e.target.value + "T00:00:00");
+                      const today = new Date(); const d = today.getDay();
+                      const todayMon = new Date(today); todayMon.setDate(today.getDate() + (d === 0 ? -6 : 1 - d)); todayMon.setHours(0,0,0,0);
+                      const pd = picked.getDay();
+                      const pickedMon = new Date(picked); pickedMon.setDate(picked.getDate() + (pd === 0 ? -6 : 1 - pd)); pickedMon.setHours(0,0,0,0);
+                      setWeekOffset(Math.round((pickedMon - todayMon) / (7*24*60*60*1000)));
+                    }} style={{ position:"absolute", opacity:0, pointerEvents:"none", width:0, height:0 }} />
                     {weekOffset !== 0 && (
                       <button onClick={() => setWeekOffset(0)} style={s.todayPill}>Today</button>
                     )}
@@ -1879,21 +1905,30 @@ const s = {
   /* ── Schedule tab ── */
   weekNavBar: {
     display: "flex", alignItems: "center", justifyContent: "space-between",
-    marginBottom: "20px", paddingBottom: "16px",
-    borderBottom: "1px solid #EEF0FD",
+    marginBottom: "20px", padding: "14px 20px",
+    background: "linear-gradient(135deg,#F4F5FF 0%,#EEF0FD 100%)",
+    borderRadius: "16px", border: "1.5px solid rgba(91,107,216,0.12)",
+    boxShadow: "0 2px 10px rgba(91,107,216,0.07)",
   },
   weekNavBtn: {
-    padding: "8px 16px", background: "#EEF0FD", color: "#5B6BD8",
-    border: "1.5px solid rgba(91,107,216,0.25)", borderRadius: "9px",
+    padding: "8px 20px",
+    background: "#fff", color: "#5B6BD8",
+    border: "1.5px solid rgba(91,107,216,0.22)", borderRadius: "99px",
     fontSize: "13px", fontWeight: "600", cursor: "pointer",
     fontFamily: "'Poppins',sans-serif",
+    boxShadow: "0 2px 8px rgba(91,107,216,0.1)",
+    transition: "all 0.15s",
   },
-  weekTitle: { fontSize: "15px", fontWeight: "700", color: "#2D3047", fontFamily: "'Poppins',sans-serif" },
+  weekTitle: {
+    fontSize: "15px", fontWeight: "700", color: "#2D3047",
+    fontFamily: "'Poppins',sans-serif", letterSpacing: "-0.2px",
+  },
   todayPill: {
-    marginTop: "4px", padding: "3px 12px",
-    background: "#5B6BD8", color: "#fff", border: "none",
+    marginTop: "5px", padding: "4px 14px",
+    background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)", color: "#fff", border: "none",
     borderRadius: "99px", fontSize: "11px", fontWeight: "600",
     cursor: "pointer", fontFamily: "'Poppins',sans-serif",
+    boxShadow: "0 3px 10px rgba(91,107,216,0.3)",
   },
 
   calWrap: { overflowX: "auto" },
@@ -1981,22 +2016,25 @@ const s = {
 
   /* ── Overview mini-calendar ── */
   ovNavBtn: {
-    width: "28px", height: "28px",
-    background: "#EEF0FD", color: "#5B6BD8",
-    border: "1.5px solid rgba(91,107,216,0.25)", borderRadius: "7px",
-    fontSize: "14px", fontWeight: "700", cursor: "pointer",
+    width: "30px", height: "30px",
+    background: "#fff", color: "#5B6BD8",
+    border: "1.5px solid rgba(91,107,216,0.22)", borderRadius: "99px",
+    fontSize: "13px", fontWeight: "700", cursor: "pointer",
     display: "flex", alignItems: "center", justifyContent: "center",
-    padding: 0,
+    padding: 0, boxShadow: "0 2px 6px rgba(91,107,216,0.1)",
+    transition: "all 0.15s",
   },
   ovWeekLabel: {
-    fontSize: "12px", fontWeight: "600", color: "#2D3047",
+    fontSize: "12px", fontWeight: "700", color: "#2D3047",
     fontFamily: "'Poppins',sans-serif", whiteSpace: "nowrap",
+    letterSpacing: "-0.1px",
   },
   ovTodayBtn: {
-    padding: "3px 10px",
-    background: "#5B6BD8", color: "#fff", border: "none",
+    padding: "3px 11px",
+    background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)", color: "#fff", border: "none",
     borderRadius: "99px", fontSize: "10px", fontWeight: "600",
     cursor: "pointer", fontFamily: "'Poppins',sans-serif",
+    boxShadow: "0 2px 8px rgba(91,107,216,0.25)",
   },
   ovCalRow: {
     display: "flex", borderBottom: "1px solid #F0F2F8", minWidth: "500px",
