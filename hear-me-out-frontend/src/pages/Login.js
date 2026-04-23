@@ -128,6 +128,9 @@ export default function Login() {
           Don't have an account?{" "}
           <span style={s.link} onClick={() => navigate("/register")}>Create one</span>
         </p>
+        <p style={{ ...s.foot, marginTop: "6px" }}>
+          <span style={s.link} onClick={() => navigate("/forgot-password")}>Forgot password?</span>
+        </p>
 
         {/* Trust badge */}
         <div style={s.trustRow}>

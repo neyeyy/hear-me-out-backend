@@ -53,6 +53,10 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [pwLoad,   setPwLoad]   = useState(false);
   const [pwMsg,    setPwMsg]    = useState({ text:"", ok:false });
 
+  // cancel + history
+  const [history,    setHistory]    = useState([]);
+  const [cancelMsg,  setCancelMsg]  = useState({ text:"", ok:false });
+
   // refs
   const prevApptRef   = useRef(null);
   const prevUnreadRef = useRef(0);
@@ -78,6 +82,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
       setUserId(map.userId || null);
     });
     fetchAppointment();
+    fetchHistory();
     const iv1 = setInterval(fetchAppointment, 5000);
     const iv2 = setInterval(fetchUnread, 8000);
     return () => { clearInterval(iv1); clearInterval(iv2); };
@@ -124,6 +129,32 @@ export default function StudentDashboardScreen({ navigation, route }) {
       firstLoadRef.current = false;
       setAppt(appt);
     } catch (e) { console.log(e); }
+  };
+
+  /* ─── fetch appointment history ── */
+  const fetchHistory = async () => {
+    try {
+      const res = await API.get("/appointments/history");
+      if (res.data.success) setHistory(res.data.appointments || []);
+    } catch (e) { /* silent */ }
+  };
+
+  /* ─── cancel appointment ── */
+  const handleCancelAppointment = async () => {
+    if (!appointment?._id) return;
+    setCancelMsg({ text:"", ok:false });
+    try {
+      const res = await API.patch(`/appointments/${appointment._id}/cancel`);
+      if (res.data.success) {
+        setCancelMsg({ text:"Appointment cancelled.", ok:true });
+        fetchAppointment();
+        fetchHistory();
+      } else {
+        setCancelMsg({ text: res.data.message || "Could not cancel.", ok:false });
+      }
+    } catch (e) {
+      setCancelMsg({ text: e.response?.data?.message || "Error cancelling.", ok:false });
+    }
   };
 
   /* ─── fetch unread chat messages ── */
@@ -305,6 +336,18 @@ export default function StudentDashboardScreen({ navigation, route }) {
                         </Text>
                       </View>
                     )}
+                    {appointment.status === "PENDING" && (
+                      <View style={{ paddingTop:12 }}>
+                        {!!cancelMsg.text && (
+                          <Text style={{ color: cancelMsg.ok ? "#4ECDC4" : "#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 }}>
+                            {cancelMsg.text}
+                          </Text>
+                        )}
+                        <TouchableOpacity onPress={handleCancelAppointment} style={s.cancelApptBtn}>
+                          <Text style={s.cancelApptBtnText}>✕ Cancel Appointment</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 ) : (
                   <View style={s.noAppt}>
@@ -314,6 +357,28 @@ export default function StudentDashboardScreen({ navigation, route }) {
                   </View>
                 )}
               </View>
+
+              {/* Appointment history */}
+              {history.length > 1 && (
+                <View style={s.section}>
+                  <Text style={s.sectionLabel}>APPOINTMENT HISTORY</Text>
+                  {history.map((h, i) => {
+                    const colors = { PENDING:"#F7971E", ONGOING:"#6C63FF", DONE:"#4ECDC4", CANCELLED:"#9CA3AF" };
+                    const c = colors[h.status] || "#9CA3AF";
+                    return (
+                      <View key={h._id || i} style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingVertical:10, borderBottomWidth: i < history.length-1 ? 1 : 0, borderBottomColor:"rgba(255,255,255,0.06)" }}>
+                        <View>
+                          <Text style={{ fontSize:12, color:c, fontWeight:"700" }}>{h.status}</Text>
+                          <Text style={{ fontSize:11, color:"rgba(255,255,255,0.38)", marginTop:2 }}>
+                            {h.scheduleDate ? new Date(h.scheduleDate).toLocaleDateString("en-US",{ month:"short", day:"numeric", year:"numeric" }) : "Not scheduled"}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>{h.severity}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
 
               {/* Action buttons */}
               <View style={s.btnRow}>
@@ -721,6 +786,8 @@ const s = StyleSheet.create({
   },
   noApptText: { fontSize:15, color:"rgba(255,255,255,0.6)", fontWeight:"600" },
   noApptSub: { fontSize:12, color:"rgba(255,255,255,0.3)", marginTop:4, textAlign:"center" },
+  cancelApptBtn: { borderWidth:1.5, borderColor:"rgba(248,113,113,0.4)", borderRadius:10, paddingVertical:10, alignItems:"center" },
+  cancelApptBtnText: { color:"#F87171", fontSize:13, fontWeight:"700" },
 
   btnRow: { flexDirection:"row", gap:10, marginBottom:20 },
   trackMoodBtn: {

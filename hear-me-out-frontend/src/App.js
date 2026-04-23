@@ -5,7 +5,9 @@ import Register from "./pages/Register";
 import Assessment from "./pages/Assessment";
 import StudentDashboard from "./pages/student/StudentDashboard";
 import Chat from "./pages/Chat";
-import CounselorDashboard from "./pages/CounselorDashboard"; // 🔥 NEW
+import CounselorDashboard from "./pages/CounselorDashboard";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 function App() {
   return (
@@ -16,7 +18,9 @@ function App() {
         <Route path="/assessment" element={<Assessment />} />
         <Route path="/student" element={<StudentDashboard />} />
         <Route path="/chat" element={<Chat />} />
-        <Route path="/admin" element={<CounselorDashboard />} /> {/* 🔥 NEW */}
+        <Route path="/admin" element={<CounselorDashboard />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
     </Router>
   );

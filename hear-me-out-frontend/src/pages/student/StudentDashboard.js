@@ -59,6 +59,8 @@ export default function StudentDashboard() {
   const [conPw, setConPw]         = useState("");
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg,    setPwMsg]     = useState({ text:"", ok:false });
+  const [history,  setHistory]   = useState([]);
+  const [cancelMsg, setCancelMsg] = useState({ text:"", ok:false });
   const navigate = useNavigate();
 
   const userName  = localStorage.getItem("name")  || "Student";
@@ -66,9 +68,34 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     fetchAppointment();
+    fetchHistory();
     const iv = setInterval(fetchAppointment, 5000);
     return () => clearInterval(iv);
   }, []);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await API.get("/appointments/history");
+      if (res.data.success) setHistory(res.data.appointments || []);
+    } catch (e) { console.log(e); }
+  };
+
+  const handleCancelAppointment = async () => {
+    if (!appointment?._id) return;
+    setCancelMsg({ text:"", ok:false });
+    try {
+      const res = await API.patch(`/appointments/${appointment._id}/cancel`);
+      if (res.data.success) {
+        setCancelMsg({ text:"Appointment cancelled.", ok:true });
+        fetchAppointment();
+        fetchHistory();
+      } else {
+        setCancelMsg({ text: res.data.message || "Could not cancel.", ok:false });
+      }
+    } catch (e) {
+      setCancelMsg({ text: e.response?.data?.message || "Error cancelling appointment.", ok:false });
+    }
+  };
 
   const fetchAppointment = async () => {
     try {
@@ -280,6 +307,18 @@ export default function StudentDashboard() {
                     </span>
                   </div>
                 )}
+                {appointment.status === "PENDING" && (
+                  <div style={{ padding: "12px 0 0" }}>
+                    {cancelMsg.text && (
+                      <div style={{ fontSize:"13px", fontWeight:600, textAlign:"center", color: cancelMsg.ok ? "#4ECDC4" : "#F87171", marginBottom:"8px" }}>
+                        {cancelMsg.text}
+                      </div>
+                    )}
+                    <button onClick={handleCancelAppointment} style={p.cancelApptBtn}>
+                      ✕ Cancel Appointment
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={p.noAppt}>
@@ -288,6 +327,30 @@ export default function StudentDashboard() {
               </div>
             )}
           </section>
+
+          {/* Appointment history */}
+          {history.length > 1 && (
+            <section style={p.section}>
+              <p style={p.sectionLabel}>APPOINTMENT HISTORY</p>
+              <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+                {history.map((h, i) => {
+                  const meta = { PENDING:{c:"#F7971E"}, ONGOING:{c:"#6C63FF"}, DONE:{c:"#4ECDC4"}, CANCELLED:{c:"#9CA3AF"} };
+                  const m = meta[h.status] || { c:"#9CA3AF" };
+                  return (
+                    <div key={h._id || i} style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:"12px", padding:"12px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:"8px" }}>
+                      <div>
+                        <span style={{ fontSize:"12px", color: m.c, fontWeight:700, fontFamily:"'Poppins',sans-serif" }}>{h.status}</span>
+                        <p style={{ margin:"2px 0 0", fontSize:"12px", color:"rgba(255,255,255,0.45)" }}>
+                          {h.scheduleDate ? new Date(h.scheduleDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "Not scheduled"}
+                        </p>
+                      </div>
+                      <span style={{ fontSize:"11px", color:"rgba(255,255,255,0.3)", fontFamily:"'Poppins',sans-serif" }}>{h.severity}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Action buttons */}
           <div style={p.btnRow}>
@@ -866,6 +929,13 @@ const p = {
     fontSize: "15px",
     fontWeight: 400,
     color: "rgba(255,255,255,0.38)",
+  },
+  cancelApptBtn: {
+    width: "100%", padding: "10px", background: "transparent",
+    color: "#F87171", border: "1.5px solid rgba(248,113,113,0.4)",
+    borderRadius: "10px", fontSize: "13px", fontWeight: 600,
+    cursor: "pointer", fontFamily: "'Poppins',sans-serif",
+    transition: "all 0.15s",
   },
   btnRow: {
     display: "flex",

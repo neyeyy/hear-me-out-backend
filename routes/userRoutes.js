@@ -3,9 +3,9 @@ const router = express.Router();
 
 const User = require("../models/User");
 const Assessment = require("../models/Assessment");
+const authMiddleware = require("../middleware/authMiddleware");
 
-// 🔥 GET ALL STUDENTS WITH SEVERITY
-router.get("/students", async (req, res) => {
+router.get("/students", authMiddleware, async (req, res) => {
   try {
     // 1. GET ALL STUDENTS
     const students = await User.find({ role: "student" });

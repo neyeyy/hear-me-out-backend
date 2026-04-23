@@ -141,6 +141,11 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.link}>Create one</Text>
             </TouchableOpacity>
           </View>
+          <View style={[styles.footerRow, { marginTop: 8 }]}>
+            <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
+              <Text style={styles.link}>Forgot password?</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </LinearGradient>

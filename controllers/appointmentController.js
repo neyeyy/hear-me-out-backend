@@ -321,6 +321,45 @@ exports.getMyAppointment = async (req, res) => {
 };
 
 
+// ❌ CANCEL APPOINTMENT (student only, PENDING only)
+exports.cancelAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const studentId = req.user.id;
+
+    const appointment = await Appointment.findById(id);
+    if (!appointment)
+      return res.json({ success: false, message: "Appointment not found" });
+
+    if (String(appointment.studentId) !== String(studentId))
+      return res.status(403).json({ success: false, message: "Not authorized" });
+
+    if (appointment.status !== "PENDING")
+      return res.json({ success: false, message: "Only pending appointments can be cancelled" });
+
+    appointment.status = "CANCELLED";
+    appointment.cancelledAt = new Date();
+    await appointment.save();
+
+    res.json({ success: true, message: "Appointment cancelled", appointment });
+  } catch (error) {
+    res.json({ success: false, message: error.message });
+  }
+};
+
+
+// 📜 GET APPOINTMENT HISTORY (all appointments for this student)
+exports.getAppointmentHistory = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const appointments = await Appointment.find({ studentId }).sort({ createdAt: -1 });
+    res.json({ success: true, appointments });
+  } catch (error) {
+    res.json({ success: false, message: error.message });
+  }
+};
+
+
 // 🔄 UPDATE STATUS + OPTIONAL RESCHEDULE
 exports.updateAppointmentStatus = async (req, res) => {
   try {

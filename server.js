@@ -11,15 +11,29 @@ const Message = require('./models/Message');
 const app = express();
 const server = http.createServer(app);
 
-// 🔥 SOCKET.IO SETUP
+// Simple in-memory rate limiter (no extra package needed)
+const rateLimitMap = new Map();
+function rateLimit(windowMs, max) {
+  return (req, res, next) => {
+    const key = req.ip;
+    const now = Date.now();
+    const entry = rateLimitMap.get(key) || { count: 0, start: now };
+    if (now - entry.start > windowMs) { entry.count = 0; entry.start = now; }
+    entry.count++;
+    rateLimitMap.set(key, entry);
+    if (entry.count > max) {
+      return res.status(429).json({ success: false, message: "Too many requests. Please wait a moment." });
+    }
+    next();
+  };
+}
+
+// SOCKET.IO SETUP
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// 🔥 MIDDLEWARE
+// MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
@@ -31,6 +45,11 @@ const moodRoutes = require('./routes/moodRoutes');
 const userRoutes = require('./routes/userRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const messageRoutes = require('./routes/messageRoutes');
+
+// Rate limit: 20 requests per minute on auth endpoints
+app.use('/api/auth/login',          rateLimit(60 * 1000, 20));
+app.use('/api/auth/register',       rateLimit(60 * 1000, 10));
+app.use('/api/auth/forgot-password', rateLimit(60 * 1000, 5));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/assessment', assessmentRoutes);

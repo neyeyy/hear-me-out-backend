@@ -7,7 +7,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 // 🧠 CREATE (protected)
 router.post('/', authMiddleware, createAssessment);
 
-// 🔍 CHECK (no auth needed for now)
-router.get('/check/:studentId', checkAssessment);
+// 🔍 CHECK (protected)
+router.get('/check/:studentId', authMiddleware, checkAssessment);
 
 module.exports = router;
