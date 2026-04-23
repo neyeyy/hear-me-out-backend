@@ -9,6 +9,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../services/api";
 import MoodCalendar from "../components/MoodCalendar";
 
+const LOGO = require("../assets/logo.png");
+
 /* ─── constants ────────────────────────────────────── */
 const MOODS = [
   { key: "HAPPY",    emoji: "😊", label: "Happy",    gradient: ["#4ECDC4","#44A08D"], glow: "#4ECDC4", quote: "Your joy matters — let it fill every corner of your day. You deserve every bit of this happiness. Keep shining, the world is brighter with you in it! 🌟" },
@@ -264,8 +266,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
               {/* Header */}
               <View style={s.dashHeader}>
                 <View style={{ flex:1 }}>
-                  <Text style={s.dashTitle}>Your Dashboard</Text>
-                  <Text style={s.dashSub}>Track your mood and appointments</Text>
+                  <Image source={LOGO} style={{ width:42, height:42, resizeMode:"contain" }} />
                 </View>
 
                 <View style={s.dashHeaderBtns}>

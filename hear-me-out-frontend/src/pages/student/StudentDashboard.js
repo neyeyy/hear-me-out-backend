@@ -259,9 +259,12 @@ export default function StudentDashboard() {
 
           {/* Dashboard header */}
           <div style={p.dashHeader}>
-            <div>
-              <h2 style={p.dashTitle}>Your Dashboard</h2>
-              <p style={p.dashSub}>Track your mood and appointments</p>
+            <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+              <span style={{ fontSize:"28px", lineHeight:1 }}>💙</span>
+              <div>
+                <h2 style={{ ...p.dashTitle, margin:0 }}>Hear Me Out</h2>
+                <p style={p.dashSub}>Track your mood and appointments</p>
+              </div>
             </div>
             <div style={{ display:"flex", gap:"8px", flexShrink:0, marginTop:"4px" }}>
               <button onClick={() => navigate("/chat")} style={p.trackBtn}>

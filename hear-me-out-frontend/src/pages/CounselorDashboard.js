@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import API from "../services/api";
+import logo from "../logo.png";
 
 const socket = io("http://localhost:5000");
 
@@ -65,6 +66,7 @@ export default function CounselorDashboard() {
   const [search,         setSearch]       = useState("");
   const [sevFilter,      setSevFilter]    = useState("ALL");
   const [loading,        setLoading]      = useState(true);
+  const [confirmCompleteId, setConfirmCompleteId] = useState(null);
   // schedule tab
   const [weekOffset,     setWeekOffset]   = useState(0);
   const [ovWeekOffset,   setOvWeekOffset] = useState(0);
@@ -416,7 +418,9 @@ export default function CounselorDashboard() {
       <aside style={s.sidebar}>
         <div style={s.sideTop}>
           <div style={s.brand}>
-            <div style={s.brandLogo}>💙</div>
+            <div style={{ ...s.brandLogo, background:"#1a1a2e", borderRadius:"50%", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <img src={logo} alt="logo" style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+            </div>
             <div>
               <div style={s.brandName}>Hear Me Out</div>
               <div style={s.brandRole}>Counselor Panel</div>
@@ -850,10 +854,25 @@ export default function CounselorDashboard() {
                                       : <span style={{ ...s.stPending, color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B", background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC" }}>{app.status}</span>
                                   ) : <span style={s.stNone}>No appointment</span>}
                                 </div>
-                                <div style={s.studentCardActions}>
-                                  <button onClick={() => openChat(student)} style={s.btnChat}>💬 Chat</button>
-                                  {app && app.status !== "DONE" && (
-                                    <button onClick={() => handleComplete(app._id)} style={s.btnDone}>✓ Done</button>
+                                <div style={{ display:"flex", flexDirection:"column", gap:"6px", alignItems:"flex-end" }}>
+                                  <div style={s.studentCardActions}>
+                                    <button onClick={() => openChat(student)} style={s.btnChat}>💬 Chat</button>
+                                    {app && app.status !== "DONE" && (
+                                      <button onClick={() => setConfirmCompleteId(confirmCompleteId === app._id ? null : app._id)} style={s.btnDone}>✓ Done</button>
+                                    )}
+                                  </div>
+                                  {app && confirmCompleteId === app._id && (
+                                    <div style={{ display:"flex", alignItems:"center", gap:"8px", background:"#FFF5F5", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:"10px", padding:"7px 12px" }}>
+                                      <span style={{ fontSize:"12px", color:"#F87171", fontWeight:600 }}>Mark as completed?</span>
+                                      <button
+                                        onClick={() => { handleComplete(app._id); setConfirmCompleteId(null); }}
+                                        style={{ padding:"4px 12px", background:"#4ECDC4", color:"#fff", border:"none", borderRadius:"7px", fontSize:"12px", fontWeight:700, cursor:"pointer", fontFamily:"'Poppins',sans-serif" }}
+                                      >Yes</button>
+                                      <button
+                                        onClick={() => setConfirmCompleteId(null)}
+                                        style={{ padding:"4px 10px", background:"#F0F2F8", color:"#7B7F9E", border:"none", borderRadius:"7px", fontSize:"12px", fontWeight:600, cursor:"pointer", fontFamily:"'Poppins',sans-serif" }}
+                                      >No</button>
+                                    </div>
                                   )}
                                 </div>
                               </div>
