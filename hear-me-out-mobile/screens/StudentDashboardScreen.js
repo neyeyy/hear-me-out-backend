@@ -396,24 +396,6 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 </TouchableOpacity>
               </View>
 
-              {/* Ad Banner */}
-              <View style={s.adCard}>
-                <Image
-                  source={{ uri: "https://upload.wikimedia.org/wikipedia/commons/4/48/Cabanatuan_garlic_longganisa6.jpg" }}
-                  style={s.adImg}
-                  resizeMode="cover"
-                />
-                <View style={s.adContent}>
-                  <Text style={s.adTag}>Featured Local Product 🇵🇭</Text>
-                  <Text style={s.adTitle}>Cabanatuan Garlic Longganisa</Text>
-                  <Text style={s.adDesc}>
-                    Nueva Ecija's pride — sweet, garlicky, and bursting with flavor.
-                    The perfect breakfast treat to brighten your morning! 🧄🌟
-                  </Text>
-                  <Text style={s.adCta}>Order now at your local market →</Text>
-                </View>
-              </View>
-
               {/* Logout */}
               <TouchableOpacity onPress={handleLogout} style={s.logoutBtn}>
                 <Text style={s.logoutText}>Sign out</Text>
@@ -957,17 +939,5 @@ const s = StyleSheet.create({
   },
   privacyBadgeText: { fontSize:11, color:"rgba(255,255,255,0.55)", fontWeight:"600" },
 
-  /* ── Ad banner ── */
-  adCard: {
-    borderRadius:20, overflow:"hidden",
-    backgroundColor:"rgba(255,255,255,0.06)",
-    borderWidth:1, borderColor:"rgba(255,255,255,0.1)",
-    marginBottom:20,
-  },
-  adImg: { width:"100%", height:160 },
-  adContent: { padding:16 },
-  adTag: { fontSize:10, fontWeight:"700", color:"#F7971E", letterSpacing:1, textTransform:"uppercase", marginBottom:6 },
-  adTitle: { fontSize:16, fontWeight:"800", color:"#fff", marginBottom:6, letterSpacing:-0.3 },
-  adDesc: { fontSize:13, color:"rgba(255,255,255,0.55)", lineHeight:20, marginBottom:8 },
-  adCta: { fontSize:12, fontWeight:"700", color:"#4ECDC4" },
+
 });
