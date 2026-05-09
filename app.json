@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Hear Me Out",
+    "slug": "your-app-slug",
+    "version": "1.0.0",
+    "android": {
+      "package": "com.danice_cabual.hearmeout"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "322d450a-3420-4239-92ef-309d9575efb6"
+      }
+    }
+  }
+}
