@@ -1,7 +1,11 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config();
+
+// Only use dotenv in development
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -72,14 +76,10 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', async (roomId) => {
     try {
       if (!roomId) return;
-
       socket.join(String(roomId));
-
       const messages = await Message.find({ roomId: String(roomId) })
         .sort({ createdAt: 1 });
-
       socket.emit('loadMessages', messages);
-
     } catch (error) {
       console.log("❌ Load messages error:", error.message);
     }
@@ -89,22 +89,19 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', async (data) => {
     try {
       if (!data.roomId || !data.message || !data.senderId) return;
-
       const newMessage = await Message.create({
         roomId: String(data.roomId),
         senderId: String(data.senderId),
         message: data.message,
         seen: false
       });
-
       io.to(String(data.roomId)).emit('receiveMessage', newMessage);
-
     } catch (error) {
       console.log("❌ Chat error:", error.message);
     }
   });
 
-  // 🔥 MARK AS SEEN (REAL FIX)
+  // 🔥 MARK AS SEEN
   socket.on('markSeen', async ({ roomId, userId }) => {
     try {
       await Message.updateMany(
@@ -115,13 +112,9 @@ io.on('connection', (socket) => {
         },
         { seen: true }
       );
-
-      // ✅ SEND UPDATED DATA FROM DB
       const updatedMessages = await Message.find({ roomId: String(roomId) })
         .sort({ createdAt: 1 });
-
       io.to(String(roomId)).emit('messagesSeen', updatedMessages);
-
     } catch (error) {
       console.log("❌ Seen error:", error.message);
     }
@@ -141,7 +134,6 @@ io.on('connection', (socket) => {
     console.log("🔴 User disconnected:", socket.id);
   });
 });
-// =================================================
 
 // 🔥 START SERVER
 const PORT = process.env.PORT || 5000;
@@ -149,7 +141,6 @@ const PORT = process.env.PORT || 5000;
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
-
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
