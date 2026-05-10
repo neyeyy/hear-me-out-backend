@@ -1,1 +1,16 @@
-{"projectId":"prj_uvOCtpUByyspB7X2VNLG6coQMfky","orgId":"team_T54xroO0lQXfEANtH9NR0WKe","projectName":"hear-me-out-frontend"}
+{
+  "projectId": "prj_uvOCtpUByyspB7X2VNLG6coQMfky",
+  "orgId": "team_T54xroO0lQXfEANtH9NR0WKe",
+  "projectName": "hear-me-out-frontend",
+  "settings": {
+    "createdAt": 1778370798512,
+    "framework": "create-react-app",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}
