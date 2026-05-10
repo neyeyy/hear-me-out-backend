@@ -13,7 +13,15 @@
     },
     "ios": {
       "bundleIdentifier": "com.hearmeout.app",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9c2cf4f7-a085-4237-a362-4d3cdaf07089"
+      }
     }
   }
 }

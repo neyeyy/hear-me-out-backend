@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import API from "../services/api";
 
-const socket = io("http://localhost:5000");
+const socket = io("https://hear-me-out-backend.up.railway.app/api");
 
 function Chat() {
   const navigate  = useNavigate();

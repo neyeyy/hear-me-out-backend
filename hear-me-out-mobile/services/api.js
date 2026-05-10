@@ -9,7 +9,7 @@ const getBaseUrl = () => {
   if (hostUri) {
     const host = hostUri.split(":").shift();
     if (host && host !== "localhost" && host !== "127.0.0.1") {
-      return `http://${host}:5000/api`;
+      return `https://hear-me-out-backend.up.railway.app/api`;
     }
   }
   // Fallback if hostUri is unavailable (e.g. production build)

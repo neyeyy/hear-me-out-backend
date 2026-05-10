@@ -13,7 +13,7 @@ const getSocketUrl = () => {
   if (hostUri) {
     const host = hostUri.split(":").shift();
     if (host && host !== "localhost" && host !== "127.0.0.1") {
-      return `http://${host}:5000`;
+      return `https://hear-me-out-backend.up.railway.app/api`;
     }
   }
   return "http://192.168.8.101:5000";

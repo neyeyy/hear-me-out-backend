@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: "https://hear-me-out-backend.up.railway.app/api",
 });
 
 // 🔥 ATTACH TOKEN TO EVERY REQUEST
