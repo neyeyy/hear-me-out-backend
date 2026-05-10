@@ -1,22 +1,7 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Constants from "expo-constants";
 
-// Automatically use whichever IP the Expo dev server is running on.
-// This means the app works on any network — home, school, hotspot, etc.
-const getBaseUrl = () => {
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const host = hostUri.split(":").shift();
-    if (host && host !== "localhost" && host !== "127.0.0.1") {
-      return `https://hear-me-out-backend.up.railway.app/api`;
-    }
-  }
-  // Fallback if hostUri is unavailable (e.g. production build)
-  return "http://192.168.8.101:5000/api";
-};
-
-const BASE_URL = getBaseUrl();
+const BASE_URL = "https://hear-me-out-backend.up.railway.app/api";
 
 const API = axios.create({ baseURL: BASE_URL });
 

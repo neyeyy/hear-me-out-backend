@@ -6,20 +6,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
-import Constants from "expo-constants";
 
-const getSocketUrl = () => {
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const host = hostUri.split(":").shift();
-    if (host && host !== "localhost" && host !== "127.0.0.1") {
-      return `https://hear-me-out-backend.up.railway.app/api`;
-    }
-  }
-  return "http://192.168.8.101:5000";
-};
-
-const socket = io(getSocketUrl());
+const socket = io("https://hear-me-out-backend.up.railway.app");
 
 export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");
@@ -35,8 +23,7 @@ export default function ChatScreen({ navigation }) {
     const init = async () => {
       const uid = await AsyncStorage.getItem("userId");
       setUserId(uid);
-      setRoomId(uid); // student's roomId is their userId
-
+      setRoomId(uid);
       socket.emit("joinRoom", uid);
     };
 
@@ -252,7 +239,6 @@ const styles = StyleSheet.create({
   headerName: { color: "#fff", fontWeight: "700", fontSize: 15 },
   headerStatus: { color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 1 },
   headerHeart: { fontSize: 20 },
-
   emptyState: {
     flex: 1,
     justifyContent: "center",
@@ -263,7 +249,6 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 52, marginBottom: 4 },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1A2E" },
   emptyText: { fontSize: 13, color: "#9CA3AF", textAlign: "center", paddingHorizontal: 40 },
-
   messageList: {
     padding: 14,
     paddingBottom: 4,
@@ -315,7 +300,6 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 4 },
   timeText: { fontSize: 9, opacity: 0.65, color: "inherit" },
   seenText: { fontSize: 9, opacity: 0.65 },
-
   typingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -332,7 +316,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   typingText: { color: "#9CA3AF", fontSize: 12, fontStyle: "italic" },
-
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
