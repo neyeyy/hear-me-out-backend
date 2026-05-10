@@ -7,7 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
 
-const socket = io("https://hear-me-out-backend.up.railway.app");
+const socket = io("https://hear-me-out-backend-production.up.railway.app");
 
 export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");
@@ -122,7 +122,6 @@ export default function ChatScreen({ navigation }) {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        {/* Header */}
         <LinearGradient colors={["#6C63FF", "#764ba2"]} style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <Text style={styles.backText}>←</Text>
@@ -141,7 +140,6 @@ export default function ChatScreen({ navigation }) {
           <Text style={styles.headerHeart}>💙</Text>
         </LinearGradient>
 
-        {/* Messages */}
         {messages.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>💬</Text>
@@ -162,7 +160,6 @@ export default function ChatScreen({ navigation }) {
           />
         )}
 
-        {/* Typing indicator */}
         {isTyping && (
           <View style={styles.typingRow}>
             <View style={styles.theirAvatar}>
@@ -174,7 +171,6 @@ export default function ChatScreen({ navigation }) {
           </View>
         )}
 
-        {/* Input */}
         <View style={styles.inputBar}>
           <View style={styles.inputWrap}>
             <TextInput
@@ -214,143 +210,87 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "center", alignItems: "center",
   },
   backText: { color: "#fff", fontSize: 18, fontWeight: "700" },
-  headerCenter: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
+  headerCenter: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
   counselorAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "center", alignItems: "center",
   },
   headerName: { color: "#fff", fontWeight: "700", fontSize: 15 },
   headerStatus: { color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 1 },
   headerHeart: { fontSize: 20 },
   emptyState: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F3F4F8",
-    gap: 10,
+    flex: 1, justifyContent: "center",
+    alignItems: "center", backgroundColor: "#F3F4F8", gap: 10,
   },
   emptyIcon: { fontSize: 52, marginBottom: 4 },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#1A1A2E" },
   emptyText: { fontSize: 13, color: "#9CA3AF", textAlign: "center", paddingHorizontal: 40 },
   messageList: {
-    padding: 14,
-    paddingBottom: 4,
-    backgroundColor: "#F3F4F8",
-    flexGrow: 1,
+    padding: 14, paddingBottom: 4,
+    backgroundColor: "#F3F4F8", flexGrow: 1,
   },
-  msgRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    marginBottom: 8,
-    gap: 6,
-  },
+  msgRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 8, gap: 6 },
   msgRowMe: { justifyContent: "flex-end" },
   msgRowThem: { justifyContent: "flex-start" },
   theirAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 26, height: 26, borderRadius: 13,
     backgroundColor: "#EEF2FF",
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "center", alignItems: "center",
   },
   myBubble: {
-    backgroundColor: "#6C63FF",
-    borderRadius: 18,
-    borderBottomRightRadius: 4,
-    padding: 12,
-    maxWidth: "72%",
-    shadowColor: "#6C63FF",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
+    backgroundColor: "#6C63FF", borderRadius: 18,
+    borderBottomRightRadius: 4, padding: 12, maxWidth: "72%",
+    shadowColor: "#6C63FF", shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25, shadowRadius: 6, elevation: 3,
   },
   myBubbleText: { color: "#fff", fontSize: 14, lineHeight: 20 },
   theirBubble: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    borderBottomLeftRadius: 4,
-    padding: 12,
-    maxWidth: "72%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.07,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: "#fff", borderRadius: 18,
+    borderBottomLeftRadius: 4, padding: 12, maxWidth: "72%",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
   },
   theirBubbleText: { color: "#1A1A2E", fontSize: 14, lineHeight: 20 },
   metaRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 4 },
   timeText: { fontSize: 9, opacity: 0.65, color: "inherit" },
   seenText: { fontSize: 9, opacity: 0.65 },
   typingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingBottom: 6,
+    flexDirection: "row", alignItems: "center",
+    gap: 6, paddingHorizontal: 14, paddingBottom: 6,
     backgroundColor: "#F3F4F8",
   },
   typingBubble: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    borderBottomLeftRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: "#fff", borderRadius: 14,
+    borderBottomLeftRadius: 4, paddingHorizontal: 12, paddingVertical: 8,
   },
   typingText: { color: "#9CA3AF", fontSize: 12, fontStyle: "italic" },
   inputBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 12,
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 12, backgroundColor: "#fff",
+    borderTopWidth: 1, borderTopColor: "#E5E7EB",
   },
   inputWrap: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
+    flex: 1, backgroundColor: "#F9FAFB", borderRadius: 24,
+    borderWidth: 2, borderColor: "#E5E7EB",
     paddingHorizontal: 16,
     paddingVertical: Platform.OS === "ios" ? 10 : 2,
     maxHeight: 100,
   },
   input: {
-    fontSize: 14,
-    color: "#1A1A2E",
+    fontSize: 14, color: "#1A1A2E",
     paddingVertical: Platform.OS === "android" ? 8 : 0,
   },
   sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#6C63FF",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    width: 44, height: 44, borderRadius: 22,
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#6C63FF", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
   sendIcon: { color: "#fff", fontSize: 17, fontWeight: "700" },
 });
