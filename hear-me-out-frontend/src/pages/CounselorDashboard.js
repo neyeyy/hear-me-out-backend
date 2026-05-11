@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 import logo from "../logo.png";
 
-const socket = io("http://localhost:5000");
+const socket = io("http://hear-me-out-backend-production.up.railway.app");
 
 /* ─── constants ──────────────────────────────────────────── */
 const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8" };
