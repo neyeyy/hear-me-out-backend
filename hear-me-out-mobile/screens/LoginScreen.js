@@ -58,7 +58,6 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <LinearGradient colors={["#667eea", "#764ba2"]} style={styles.container}>
-      {/* Background blobs */}
       <View style={styles.blob1} />
       <View style={styles.blob2} />
 
@@ -69,8 +68,13 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.card}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={{ width:80, height:80, borderRadius:40, backgroundColor:"#1a1a2e", alignItems:"center", justifyContent:"center", marginBottom:10, overflow:"hidden" }}>
-              <Image source={LOGO} style={{ width:72, height:72, resizeMode:"contain" }} />
+            <View style={{
+              width: 80, height: 80, borderRadius: 40,
+              backgroundColor: "#1a1a2e",
+              alignItems: "center", justifyContent: "center",
+              marginBottom: 10, overflow: "hidden"
+            }}>
+              <Image source={LOGO} style={{ width: 72, height: 72, resizeMode: "contain" }} />
             </View>
             <Text style={styles.title}>Hear Me Out</Text>
             <Text style={styles.subtitle}>Your mental wellness companion</Text>
@@ -116,7 +120,14 @@ export default function LoginScreen({ navigation }) {
             </View>
           </View>
 
-          {!!error && <Text style={{ color:"#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 }}>{error}</Text>}
+          {!!error && (
+            <Text style={{
+              color: "#F87171", fontSize: 13,
+              fontWeight: "600", textAlign: "center", marginBottom: 8
+            }}>
+              {error}
+            </Text>
+          )}
 
           {/* Button */}
           <TouchableOpacity
@@ -138,14 +149,8 @@ export default function LoginScreen({ navigation }) {
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Footer */}
-          <View style={styles.footerRow}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Register")}>
-              <Text style={styles.link}>Create one</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={[styles.footerRow, { marginTop: 8 }]}>
+          {/* Footer - Only Forgot Password, No Register */}
+          <View style={[styles.footerRow, { marginTop: 24 }]}>
             <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
               <Text style={styles.link}>Forgot password?</Text>
             </TouchableOpacity>
@@ -197,10 +202,6 @@ const styles = StyleSheet.create({
   header: {
     alignItems: "center",
     marginBottom: 32,
-  },
-  logo: {
-    fontSize: 52,
-    marginBottom: 10,
   },
   title: {
     fontSize: 26,
@@ -270,11 +271,6 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 24,
-  },
-  footerText: {
-    fontSize: 14,
-    color: "#6B7280",
   },
   link: {
     fontSize: 14,
