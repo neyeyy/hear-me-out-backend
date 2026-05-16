@@ -6,7 +6,7 @@ const crypto = require('crypto');
 // REGISTER
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, yearLevel } = req.body;
     if (!name || !email || !password)
       return res.json({ success: false, message: "All fields are required" });
     if (password.length < 6)
@@ -17,7 +17,13 @@ exports.register = async (req, res) => {
       return res.json({ success: false, message: "Email already registered" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    await User.create({ name: name.trim(), email: email.toLowerCase().trim(), password: hashedPassword });
+    const validYearLevels = ['1st', '2nd', '3rd', '4th'];
+    await User.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password: hashedPassword,
+      yearLevel: validYearLevels.includes(yearLevel) ? yearLevel : null,
+    });
 
     res.json({ success: true, message: "Registration successful" });
   } catch (error) {

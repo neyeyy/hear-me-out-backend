@@ -326,6 +326,7 @@ exports.cancelAppointment = async (req, res) => {
   try {
     const { id } = req.params;
     const studentId = req.user.id;
+    const { cancelReason } = req.body;
 
     const appointment = await Appointment.findById(id);
     if (!appointment)
@@ -339,6 +340,7 @@ exports.cancelAppointment = async (req, res) => {
 
     appointment.status = "CANCELLED";
     appointment.cancelledAt = new Date();
+    appointment.cancelReason = cancelReason || null;
     await appointment.save();
 
     res.json({ success: true, message: "Appointment cancelled", appointment });
@@ -364,7 +366,7 @@ exports.getAppointmentHistory = async (req, res) => {
 exports.updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, scheduleDate } = req.body;
+    const { status, scheduleDate, isUrgent } = req.body;
 
     const update = {};
 
@@ -385,6 +387,16 @@ exports.updateAppointmentStatus = async (req, res) => {
         return res.json({ success: false, message: "Must be a weekday (Mon–Fri), 9 AM–4 PM, outside the 12–1 PM lunch break, on a 30-minute mark." });
       }
       update.scheduleDate = d;
+    }
+
+    // Urgent flag: bump to earliest available slot (next business day)
+    if (isUrgent === true) {
+      update.isUrgent = true;
+      const urgentSlot = await findNextAvailableSlot(1);
+      update.scheduleDate = urgentSlot;
+      update.status = "PENDING";
+    } else if (isUrgent === false) {
+      update.isUrgent = false;
     }
 
     if (Object.keys(update).length === 0) {

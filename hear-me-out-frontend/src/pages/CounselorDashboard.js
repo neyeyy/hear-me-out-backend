@@ -4,7 +4,12 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 import logo from "../logo.png";
 
-const socket = io("https://hear-me-out-backend-production.up.railway.app");
+const socket = io("https://hear-me-out-backend-production.up.railway.app", {
+  transports: ["websocket", "polling"],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+});
 
 /* ─── constants ──────────────────────────────────────────── */
 const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8" };
@@ -64,7 +69,7 @@ export default function CounselorDashboard() {
   const [apptList,       setApptList]     = useState([]);
   const [analytics,      setAnalytics]    = useState(null);
   const [search,         setSearch]       = useState("");
-  const [sevFilter,      setSevFilter]    = useState("ALL");
+  const [sevFilter,      setSevFilter]    = useState("HIGH");
   const [loading,        setLoading]      = useState(true);
   const [confirmCompleteId, setConfirmCompleteId] = useState(null);
   // schedule tab
@@ -83,6 +88,10 @@ export default function CounselorDashboard() {
   const [chatInput,      setChatInput]      = useState("");
   const [chatTyping,     setChatTyping]     = useState(false);
   const [chatSearch,     setChatSearch]     = useState("");
+  // AI recommendation
+  const [aiRec,          setAiRec]          = useState("");
+  const [aiLoading,      setAiLoading]      = useState(false);
+  const [urgentLoading,  setUrgentLoading]  = useState(null);
   // notifications
   const [notifOpen,      setNotifOpen]      = useState(false);
   const [notifs,         setNotifs]         = useState([]);
@@ -232,6 +241,9 @@ export default function CounselorDashboard() {
     const counselorId = localStorage.getItem("userId");
     socket.emit("joinRoom", chatRoom);
 
+    const onReconnect = () => socket.emit("joinRoom", String(chatRoomRef.current));
+    socket.on("connect", onReconnect);
+
     const onLoad = (data) => {
       setChatMessages(data);
       const hasUnseen = data.some(m => !m.seen && String(m.senderId) !== String(counselorId));
@@ -261,6 +273,7 @@ export default function CounselorDashboard() {
     socket.on("stopTyping",     onStopType);
 
     return () => {
+      socket.off("connect",        onReconnect);
       socket.off("loadMessages",   onLoad);
       socket.off("receiveMessage", onReceive);
       socket.off("messagesSeen",   onSeen);
@@ -270,11 +283,31 @@ export default function CounselorDashboard() {
   }, [chatRoom, loadConversations]);
 
   const handleComplete = async (appointmentId) => {
-
     try {
       await API.patch(`/appointments/${appointmentId}`, { status: "DONE" });
       fetchAppointments();
     } catch (e) { console.error(e.response?.data || e.message); }
+  };
+
+  const handleUrgent = async (appointmentId) => {
+    try {
+      setUrgentLoading(appointmentId);
+      await API.patch(`/appointments/${appointmentId}`, { isUrgent: true });
+      fetchAppointments();
+    } catch (e) { console.error(e.response?.data || e.message); }
+    finally { setUrgentLoading(null); }
+  };
+
+  const handleAiRecommendation = async () => {
+    try {
+      setAiLoading(true);
+      setAiRec("");
+      const res = await API.post("/analytics/ai-recommendation", { analytics });
+      if (res.data.success) setAiRec(res.data.recommendation);
+      else setAiRec("Could not generate recommendation.");
+    } catch (e) {
+      setAiRec("AI service unavailable. Please try again later.");
+    } finally { setAiLoading(false); }
   };
 
   const openChat = (student) => {
@@ -373,15 +406,7 @@ export default function CounselorDashboard() {
     (!appointments[s._id] || appointments[s._id].status !== "DONE")
   ).length;
 
-  /* Sort key: active (PENDING/ONGOING) HIGH → MEDIUM → LOW → no-sev,
-     then completed/no-appt in the same severity order at the bottom */
-  const studentSortKey = (student) => {
-    const app = appointments[student._id];
-    const isActive = app && app.status !== "DONE"; // PENDING or ONGOING
-    const sevNum = SEV_ORDER[student.severity] || 4;
-    return isActive ? sevNum : sevNum + 10;
-  };
-
+  /* Sort: HIGH risk first, then by score descending, then MEDIUM, LOW */
   const filteredStudents = students
     .filter(s => {
       const q = search.toLowerCase();
@@ -390,7 +415,11 @@ export default function CounselorDashboard() {
       const matchSev = sevFilter === "ALL" || s.severity === sevFilter;
       return matchSearch && matchSev;
     })
-    .sort((a, b) => studentSortKey(a) - studentSortKey(b));
+    .sort((a, b) => {
+      const sevDiff = (SEV_ORDER[a.severity] || 4) - (SEV_ORDER[b.severity] || 4);
+      if (sevDiff !== 0) return sevDiff;
+      return (b.score || 0) - (a.score || 0); // higher score first within same severity
+    });
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -844,7 +873,11 @@ export default function CounselorDashboard() {
                                   </div>
                                   <div>
                                     <div style={s.studentCardName}>{student.name}</div>
-                                    <div style={s.studentCardEmail}>{student.email}</div>
+                                    <div style={s.studentCardEmail}>
+                                      {student.email}
+                                      {student.yearLevel && <span style={{ marginLeft:"6px", fontSize:"10px", fontWeight:700, color:"#7C6FCD", background:"rgba(124,111,205,0.1)", padding:"1px 6px", borderRadius:"99px" }}>{student.yearLevel} yr</span>}
+                                      {student.score > 0 && <span style={{ marginLeft:"4px", fontSize:"10px", fontWeight:700, color: color, background:`${color}18`, padding:"1px 6px", borderRadius:"99px" }}>Score: {student.score}</span>}
+                                    </div>
                                   </div>
                                 </div>
                                 <div style={s.apptStatus}>
@@ -1015,6 +1048,64 @@ export default function CounselorDashboard() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+
+            {/* Year Level Breakdown */}
+            {(analytics?.yearLevelBreakdown?.length > 0) && (
+              <div style={s.card}>
+                <div style={s.cardHeader}>
+                  <div style={s.cardTitleRow}>
+                    <span style={{ ...s.dot, background:"#38C9B8" }} />
+                    <h2 style={s.cardTitle}>Students by Year Level</h2>
+                  </div>
+                  <span style={s.cardSub}>Enrollment distribution</span>
+                </div>
+                <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
+                  {["1st","2nd","3rd","4th"].map(yr => {
+                    const entry = (analytics.yearLevelBreakdown || []).find(e => e._id === yr);
+                    const count = entry?.count || 0;
+                    const totalYr = (analytics.yearLevelBreakdown || []).reduce((s,e) => s + e.count, 0);
+                    const pct = totalYr > 0 ? Math.round(count / totalYr * 100) : 0;
+                    return (
+                      <div key={yr} style={{ flex:"1 1 100px", background:"#F8F9FF", borderRadius:"14px", padding:"16px", textAlign:"center", border:"1.5px solid #E8EAF6" }}>
+                        <div style={{ fontSize:"24px", fontWeight:"800", color:"#5B6BD8", fontFamily:"'Poppins',sans-serif" }}>{count}</div>
+                        <div style={{ fontSize:"13px", fontWeight:"700", color:"#2D3047", fontFamily:"'Poppins',sans-serif", marginTop:"4px" }}>{yr} Year</div>
+                        <div style={{ fontSize:"11px", color:"#A8AECB", fontFamily:"'Lato',sans-serif", marginTop:"2px" }}>{pct}%</div>
+                        <div style={{ marginTop:"8px", height:"4px", background:"#E8EAF6", borderRadius:"9px" }}>
+                          <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#38C9B8,#5B6BD8)", borderRadius:"9px" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* AI Recommendation */}
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background:"#7C6FCD" }} />
+                  <h2 style={s.cardTitle}>AI Recommendations</h2>
+                </div>
+                <button
+                  onClick={handleAiRecommendation}
+                  disabled={aiLoading}
+                  style={{ padding:"8px 18px", background:"linear-gradient(135deg,#5B6BD8,#7C6FCD)", color:"#fff", border:"none", borderRadius:"99px", fontSize:"13px", fontWeight:"600", cursor: aiLoading ? "not-allowed" : "pointer", fontFamily:"'Poppins',sans-serif", opacity: aiLoading ? 0.7 : 1 }}
+                >
+                  {aiLoading ? "Generating…" : "✨ Generate"}
+                </button>
+              </div>
+              {aiRec ? (
+                <div style={{ fontSize:"15px", lineHeight:"1.8", color:"#2D3047", fontFamily:"'Lato',sans-serif", whiteSpace:"pre-wrap" }}>
+                  {aiRec}
+                </div>
+              ) : (
+                <div style={s.emptyBox}>
+                  <span style={{ fontSize:"32px" }}>🤖</span>
+                  <p style={s.emptyText}>Click "Generate" to get AI-powered counseling recommendations based on the current data.</p>
                 </div>
               )}
             </div>
@@ -1208,9 +1299,19 @@ export default function CounselorDashboard() {
                       </select>
                     </div>
                     {rescheduleErr && <div style={{ color:"#F87171", fontSize:"13px", fontWeight:600, textAlign:"center", marginTop:"10px" }}>{rescheduleErr}</div>}
-                    <div style={{ display:"flex", gap:"10px", marginTop:"14px" }}>
+                    <div style={{ display:"flex", gap:"10px", marginTop:"14px", flexWrap:"wrap" }}>
                       <button onClick={handleReschedule} disabled={rescheduling} style={s.modalSaveBtn}>
                         {rescheduling ? "Saving…" : "Save Schedule"}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await handleUrgent(rescheduleAppt._id);
+                          setRescheduleAppt(null);
+                        }}
+                        disabled={urgentLoading === rescheduleAppt?._id}
+                        style={{ ...s.modalSaveBtn, background:"linear-gradient(135deg,#F87171,#F9A72B)" }}
+                      >
+                        {urgentLoading === rescheduleAppt?._id ? "Setting…" : "🚨 Mark Urgent"}
                       </button>
                       <button onClick={() => { setRescheduleAppt(null); setRescheduleErr(""); }} style={s.modalCancelBtn}>Cancel</button>
                     </div>

@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 import API from "../services/api";
 
 export default function Register() {
-  const [name, setName]         = useState("");
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [focused, setFocused]   = useState(null);
-  const [error,   setError]     = useState("");
+  const [name,      setName]      = useState("");
+  const [email,     setEmail]     = useState("");
+  const [password,  setPassword]  = useState("");
+  const [yearLevel, setYearLevel] = useState("");
+  const [showPass,  setShowPass]  = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [focused,   setFocused]   = useState(null);
+  const [error,     setError]     = useState("");
   const navigate = useNavigate();
 
   const handleRegister = async () => {
@@ -17,7 +18,7 @@ export default function Register() {
     setError("");
     try {
       setLoading(true);
-      const res = await API.post("/auth/register", { name, email, password });
+      const res = await API.post("/auth/register", { name, email, password, yearLevel });
       if (res.data.success) {
         navigate("/");
       } else {
@@ -70,6 +71,27 @@ export default function Register() {
               </div>
             </div>
           ))}
+
+          {/* Year level dropdown */}
+          <div style={s.group}>
+            <label style={s.label}>Year Level</label>
+            <div style={{ ...s.inputRow, borderColor: focused === "yr" ? "#38C9B8" : "rgba(56,201,184,0.2)" }}>
+              <span style={s.icon}>🎓</span>
+              <select
+                value={yearLevel}
+                onChange={e => setYearLevel(e.target.value)}
+                onFocus={() => setFocused("yr")}
+                onBlur={() => setFocused(null)}
+                style={{ ...s.input, flex: 1, cursor: "pointer" }}
+              >
+                <option value="">Select year level</option>
+                <option value="1st">1st Year</option>
+                <option value="2nd">2nd Year</option>
+                <option value="3rd">3rd Year</option>
+                <option value="4th">4th Year</option>
+              </select>
+            </div>
+          </div>
 
           {error && <div style={{ color:"#F87171", fontSize:"13px", fontWeight:600, textAlign:"center", marginTop:"-6px" }}>{error}</div>}
 

@@ -3,6 +3,38 @@ import { useNavigate, useLocation } from "react-router-dom";
 import API from "../../services/api";
 import MoodCalendar from "../../components/MoodCalendar";
 
+const MOOD_QUOTES = {
+  HAPPY: [
+    "Your joy matters — let it fill every corner of your day. Keep shining! 🌟",
+    "Happiness looks good on you. Carry this feeling forward and share it generously. 😊",
+    "You are allowed to feel this good. Celebrate the small wins — they add up to great things. 🎉",
+    "Good days are proof that great ones are possible. Enjoy every moment of this one! 🌈",
+  ],
+  SAD: [
+    "It takes real strength to sit with hard feelings. Every storm runs out of rain. 💙",
+    "You don't have to be okay right now. Rest, and come back stronger. 🌙",
+    "Sadness is not weakness — it means you cared deeply. That's a beautiful thing. 💜",
+    "Even the darkest night will end, and the sun will rise again. You are not alone. 🌅",
+  ],
+  STRESSED: [
+    "You have survived 100% of your hardest days. Take one slow breath — you are enough. 🌿",
+    "Progress, not perfection. You are doing better than you think. One step at a time. 🚶",
+    "Stress means you care. Channel it into focus, and watch what you can accomplish. 💪",
+    "Put down what you can't carry alone. Asking for help is a sign of wisdom, not weakness. 🤝",
+  ],
+  ANXIOUS: [
+    "Right here, right now — you are safe. This wave will pass, and you will still be standing. 🌈",
+    "Breathe in for 4 counts, hold for 4, out for 4. You are in control of this moment. 🧘",
+    "Anxiety is not a fact — it's a feeling. Feelings pass. You are bigger than your worry. 🌸",
+    "You've faced uncertainty before and made it through. You have everything you need. ✨",
+  ],
+};
+
+const pickQuote = (key) => {
+  const list = MOOD_QUOTES[key] || ["Stay positive and take care of yourself."];
+  return list[Math.floor(Math.random() * list.length)];
+};
+
 const MOODS = [
   {
     key: "HAPPY",
@@ -10,7 +42,6 @@ const MOODS = [
     label: "Happy",
     gradient: "linear-gradient(135deg,#4ECDC4 0%,#44A08D 100%)",
     glow: "rgba(78,205,196,0.4)",
-    quote: "Your joy matters — let it fill every corner of your day. You deserve every bit of this happiness. Keep shining, the world is brighter with you in it! 🌟",
   },
   {
     key: "SAD",
@@ -18,7 +49,6 @@ const MOODS = [
     label: "Sad",
     gradient: "linear-gradient(135deg,#6C63FF 0%,#9B59B6 100%)",
     glow: "rgba(108,99,255,0.4)",
-    quote: "It takes real strength to sit with hard feelings. You are not alone in this — every storm runs out of rain. Reaching out today is already an act of courage. 💙",
   },
   {
     key: "STRESSED",
@@ -26,7 +56,6 @@ const MOODS = [
     label: "Stressed",
     gradient: "linear-gradient(135deg,#F7971E 0%,#FFD200 100%)",
     glow: "rgba(247,151,30,0.4)",
-    quote: "You have survived 100% of your hardest days — that record stays perfect. Take one slow breath. You don't have to solve everything right now. You are enough. 🌿",
   },
   {
     key: "ANXIOUS",
@@ -34,7 +63,6 @@ const MOODS = [
     label: "Anxious",
     gradient: "linear-gradient(135deg,#FF6B6B 0%,#FF8E53 100%)",
     glow: "rgba(255,107,107,0.4)",
-    quote: "Right here, right now — you are safe. Anxiety is your mind trying to protect you, not predict the future. This wave will pass, and you will still be standing. 🌈",
   },
 ];
 
@@ -60,7 +88,10 @@ export default function StudentDashboard() {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg,    setPwMsg]     = useState({ text:"", ok:false });
   const [history,  setHistory]   = useState([]);
-  const [cancelMsg, setCancelMsg] = useState({ text:"", ok:false });
+  const [cancelMsg,    setCancelMsg]    = useState({ text:"", ok:false });
+  const [cancelReason, setCancelReason] = useState("");
+  const [upcomingAlert, setUpcomingAlert] = useState(null);
+  const [randomQuote,  setRandomQuote]  = useState("");
   const navigate = useNavigate();
 
   const userName  = localStorage.getItem("name")  || "Student";
@@ -84,9 +115,10 @@ export default function StudentDashboard() {
     if (!appointment?._id) return;
     setCancelMsg({ text:"", ok:false });
     try {
-      const res = await API.patch(`/appointments/${appointment._id}/cancel`);
+      const res = await API.patch(`/appointments/${appointment._id}/cancel`, { cancelReason });
       if (res.data.success) {
         setCancelMsg({ text:"Appointment cancelled.", ok:true });
+        setCancelReason("");
         fetchAppointment();
         fetchHistory();
       } else {
@@ -101,7 +133,20 @@ export default function StudentDashboard() {
     try {
       const res = await API.get("/appointments/my");
       const d = res.data;
-      setAppt(Array.isArray(d) ? (d[0] || null) : d);
+      const appt = Array.isArray(d) ? (d[0] || null) : d;
+      setAppt(appt);
+      // Upcoming appointment notification — within 24 h
+      if (appt?.scheduleDate && appt.status === "PENDING") {
+        const diffMs  = new Date(appt.scheduleDate) - new Date();
+        const diffHrs = diffMs / (1000 * 60 * 60);
+        if (diffHrs >= 0 && diffHrs <= 24) {
+          setUpcomingAlert(`Your appointment is today at ${new Date(appt.scheduleDate).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}!`);
+        } else {
+          setUpcomingAlert(null);
+        }
+      } else {
+        setUpcomingAlert(null);
+      }
     } catch (e) { console.log(e); }
   };
 
@@ -178,7 +223,7 @@ export default function StudentDashboard() {
               return (
                 <button
                   key={m.key}
-                  onClick={() => { setSelected(m); setStep("note"); }}
+                  onClick={() => { setSelected(m); setRandomQuote(pickQuote(m.key)); setStep("note"); }}
                   onMouseEnter={() => setHovered(m.key)}
                   onMouseLeave={() => setHovered(null)}
                   style={{
@@ -222,7 +267,7 @@ export default function StudentDashboard() {
                 <span style={p.affirmIcon}>💬</span>
                 <span style={p.affirmTag}>A message for you</span>
               </div>
-              <p style={p.affirmQuote}>{selected.quote}</p>
+              <p style={p.affirmQuote}>{randomQuote}</p>
               <div style={p.affirmDivider} />
               <p style={p.affirmSub}>
                 Your feelings are valid. You're doing better than you think. 🌱
@@ -256,6 +301,14 @@ export default function StudentDashboard() {
       {/* ────────────── DASHBOARD ────────────── */}
       {step === "dashboard" && (
         <div className="animate-fadeIn" style={p.dashWrap}>
+
+          {/* Upcoming appointment alert */}
+          {upcomingAlert && (
+            <div style={p.upcomingBanner}>
+              <span style={{ fontSize:"18px" }}>🔔</span>
+              <span style={p.upcomingText}>{upcomingAlert}</span>
+            </div>
+          )}
 
           {/* Dashboard header */}
           <div style={p.dashHeader}>
@@ -312,6 +365,12 @@ export default function StudentDashboard() {
                 )}
                 {appointment.status === "PENDING" && (
                   <div style={{ padding: "12px 0 0" }}>
+                    <textarea
+                      placeholder="Reason for cancellation (optional)…"
+                      value={cancelReason}
+                      onChange={e => setCancelReason(e.target.value.slice(0,200))}
+                      style={{ ...p.textarea, minHeight:"64px", marginBottom:"10px", fontSize:"13px" }}
+                    />
                     {cancelMsg.text && (
                       <div style={{ fontSize:"13px", fontWeight:600, textAlign:"center", color: cancelMsg.ok ? "#4ECDC4" : "#F87171", marginBottom:"8px" }}>
                         {cancelMsg.text}
@@ -539,11 +598,11 @@ const p = {
     fontFamily: "'Poppins',sans-serif",
   },
   heroSub: {
-    fontSize: "15px",
+    fontSize: "16px",
     fontWeight: 400,
-    color: "rgba(255,255,255,0.52)",
+    color: "rgba(255,255,255,0.62)",
     margin: 0,
-    lineHeight: 1.65,
+    lineHeight: 1.7,
   },
   grid: {
     display: "grid",
@@ -714,10 +773,10 @@ const p = {
     fontFamily: "'Poppins',sans-serif",
   },
   affirmQuote: {
-    fontSize: "16px",
+    fontSize: "17px",
     fontWeight: 400,
     color: "#fff",
-    lineHeight: 1.75,
+    lineHeight: 1.8,
     margin: "0 0 16px",
     fontFamily: "'Lato',sans-serif",
     fontStyle: "italic",
@@ -828,6 +887,24 @@ const p = {
     textUnderlineOffset: "3px",
   },
 
+  /* ── Upcoming alert ── */
+  upcomingBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    background: "rgba(78,205,196,0.15)",
+    border: "1.5px solid rgba(78,205,196,0.4)",
+    borderRadius: "14px",
+    padding: "14px 18px",
+    marginBottom: "20px",
+  },
+  upcomingText: {
+    fontSize: "15px",
+    fontWeight: 600,
+    color: "#4ECDC4",
+    fontFamily: "'Poppins',sans-serif",
+  },
+
   /* ── Dashboard ── */
   dashWrap: {
     width: "100%",
@@ -907,17 +984,17 @@ const p = {
     borderBottom: "1px solid rgba(255,255,255,0.06)",
   },
   apptKey: {
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 700,
-    color: "rgba(255,255,255,0.42)",
-    letterSpacing: "0.06em",
+    color: "rgba(255,255,255,0.55)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
     fontFamily: "'Poppins',sans-serif",
   },
   apptVal: {
-    fontSize: "14px",
+    fontSize: "15px",
     fontWeight: 600,
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(255,255,255,0.9)",
   },
   noAppt: {
     display: "flex",

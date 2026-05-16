@@ -131,14 +131,33 @@ exports.createAssessment = async (req, res) => {
     // 🔥 CREATE APPOINTMENT FIRST (IMPORTANT FIX)
     let appointment = null;
 
+    // HIGH/MEDIUM always get scheduled; LOW gets scheduled only if a slot is available
     if (severity === "HIGH" || severity === "MEDIUM") {
       console.log(`🔥 ${severity} severity detected`);
-
-      appointment = await createAutoAppointment(
+      appointment = await createAutoAppointment(studentId, severity, "assessment");
+    } else if (severity === "LOW") {
+      const existingAppt = await Appointment.findOne({
         studentId,
-        severity,
-        "assessment"
-      );
+        status: { $in: ["PENDING", "ONGOING"] }
+      });
+      if (!existingAppt) {
+        // Check if a slot is available 5 days out
+        const daysOut = 5;
+        const slotDate = await findNextAvailableSlot(daysOut);
+        // Only schedule if it falls within a reasonable window (≤ 14 days)
+        const daysDiff = Math.ceil((slotDate - new Date()) / (1000 * 60 * 60 * 24));
+        if (daysDiff <= 14) {
+          appointment = await Appointment.create({
+            studentId,
+            severity: "LOW",
+            assignedTo: "Student Assistant",
+            scheduleDate: slotDate,
+            status: "PENDING",
+            source: "assessment"
+          });
+          console.log("✅ LOW-risk appointment created (vacant slot):", appointment);
+        }
+      }
     }
 
     // 🔥 CREATE ASSESSMENT WITH APPOINTMENT LINK

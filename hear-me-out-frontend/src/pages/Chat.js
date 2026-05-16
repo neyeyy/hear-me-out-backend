@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import API from "../services/api";
 
-const socket = io("https://hear-me-out-backend-production.up.railway.app");
+const socket = io("https://hear-me-out-backend-production.up.railway.app", {
+  transports: ["websocket", "polling"],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+});
 
 function Chat() {
   const navigate  = useNavigate();
@@ -62,6 +67,12 @@ function Chat() {
 
     socket.emit("joinRoom", activeRoom);
 
+    // Re-join room on reconnect so messages resume automatically
+    const onReconnect = () => {
+      socket.emit("joinRoom", String(activeRoomRef.current));
+    };
+    socket.on("connect", onReconnect);
+
     const onLoad = (data) => {
       setMessages(data);
       const hasUnseen = data.some(
@@ -103,11 +114,12 @@ function Chat() {
     socket.on("stopTyping",    onStopType);
 
     return () => {
-      socket.off("loadMessages",  onLoad);
+      socket.off("connect",        onReconnect);
+      socket.off("loadMessages",   onLoad);
       socket.off("receiveMessage", onReceive);
-      socket.off("messagesSeen",  onSeen);
-      socket.off("typing",        onTyping);
-      socket.off("stopTyping",    onStopType);
+      socket.off("messagesSeen",   onSeen);
+      socket.off("typing",         onTyping);
+      socket.off("stopTyping",     onStopType);
     };
   }, [activeRoom, userId, isStudent, loadConversations]);
 
