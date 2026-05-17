@@ -1,3 +1,5 @@
+process.env.TZ = 'Asia/Manila'; // Ensure all Date operations use Philippine Standard Time (UTC+8)
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');

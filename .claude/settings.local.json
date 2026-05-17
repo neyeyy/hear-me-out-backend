@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx expo *)"
+      "Bash(npx expo *)",
+      "Bash(echo.)",
+      "Bash(echo ANTHROPIC_API_KEY=your_anthropic_api_key_here)",
+      "Bash(git commit -m ' *)",
+      "PowerShell(gh repo create \"New-changes-from-demo-presentation\" --public --description \"Hear Me Out - New changes from demo presentation\" 2>&1)",
+      "Bash(git checkout *)",
+      "Bash(git push *)"
     ]
   }
 }
