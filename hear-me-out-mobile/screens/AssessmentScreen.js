@@ -25,9 +25,10 @@ export default function AssessmentScreen({ navigation }) {
   const [messages, setMessages] = useState([]);
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState([]);
-  const [result, setResult] = useState(null);
-  const [isTyping, setIsTyping] = useState(false);
-  const [started, setStarted] = useState(false);
+  const [result,      setResult]      = useState(null);
+  const [isTyping,    setIsTyping]    = useState(false);
+  const [started,     setStarted]     = useState(false);
+  const [submitting,  setSubmitting]  = useState(false);
 
   const scrollRef = useRef(null);
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -89,6 +90,8 @@ export default function AssessmentScreen({ navigation }) {
   };
 
   const submitAssessment = async (finalAnswers) => {
+    if (submitting) return; // prevent double submission
+    setSubmitting(true);
     try {
       const res = await API.post("/assessment", { answers: finalAnswers });
       setResult(res.data);
@@ -108,6 +111,8 @@ export default function AssessmentScreen({ navigation }) {
       });
     } catch (err) {
       console.log(err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -231,7 +236,7 @@ export default function AssessmentScreen({ navigation }) {
                   <Text style={styles.severityText}>{result.severity} RISK</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => navigation.replace("Dashboard", { step: "pick" })}
+                  onPress={() => navigation.replace("Dashboard", { step: "dashboard" })}
                   activeOpacity={0.85}
                 >
                   <LinearGradient colors={["#6C63FF", "#764ba2"]} style={styles.continueBtn}>

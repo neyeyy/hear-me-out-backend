@@ -9,24 +9,28 @@ const MOOD_QUOTES = {
     "Happiness looks good on you. Carry this feeling forward and share it generously. 😊",
     "You are allowed to feel this good. Celebrate the small wins — they add up to great things. 🎉",
     "Good days are proof that great ones are possible. Enjoy every moment of this one! 🌈",
+    "Your smile is contagious. The world is genuinely better because you are in it today. 💛",
   ],
   SAD: [
     "It takes real strength to sit with hard feelings. Every storm runs out of rain. 💙",
     "You don't have to be okay right now. Rest, and come back stronger. 🌙",
     "Sadness is not weakness — it means you cared deeply. That's a beautiful thing. 💜",
     "Even the darkest night will end, and the sun will rise again. You are not alone. 🌅",
+    "Tears water the seeds of your next growth. Be gentle with yourself today. 🌱",
   ],
   STRESSED: [
     "You have survived 100% of your hardest days. Take one slow breath — you are enough. 🌿",
     "Progress, not perfection. You are doing better than you think. One step at a time. 🚶",
     "Stress means you care. Channel it into focus, and watch what you can accomplish. 💪",
     "Put down what you can't carry alone. Asking for help is a sign of wisdom, not weakness. 🤝",
+    "Your mind is full right now. Pause, breathe, and do just the next small thing. That's enough. 🍃",
   ],
   ANXIOUS: [
     "Right here, right now — you are safe. This wave will pass, and you will still be standing. 🌈",
     "Breathe in for 4 counts, hold for 4, out for 4. You are in control of this moment. 🧘",
     "Anxiety is not a fact — it's a feeling. Feelings pass. You are bigger than your worry. 🌸",
     "You've faced uncertainty before and made it through. You have everything you need. ✨",
+    "Ground yourself: name 5 things you see, 4 you feel, 3 you hear. You are here. You are okay. 🕊️",
   ],
 };
 
@@ -91,6 +95,7 @@ export default function StudentDashboard() {
   const [cancelMsg,    setCancelMsg]    = useState({ text:"", ok:false });
   const [cancelReason, setCancelReason] = useState("");
   const [upcomingAlert, setUpcomingAlert] = useState(null);
+  const [unreadMsg,    setUnreadMsg]    = useState(0);
   const [randomQuote,  setRandomQuote]  = useState("");
   const navigate = useNavigate();
 
@@ -100,8 +105,10 @@ export default function StudentDashboard() {
   useEffect(() => {
     fetchAppointment();
     fetchHistory();
-    const iv = setInterval(fetchAppointment, 5000);
-    return () => clearInterval(iv);
+    fetchUnread();
+    const iv1 = setInterval(fetchAppointment, 5000);
+    const iv2 = setInterval(fetchUnread, 8000);
+    return () => { clearInterval(iv1); clearInterval(iv2); };
   }, []);
 
   const fetchHistory = async () => {
@@ -109,6 +116,15 @@ export default function StudentDashboard() {
       const res = await API.get("/appointments/history");
       if (res.data.success) setHistory(res.data.appointments || []);
     } catch (e) { console.log(e); }
+  };
+
+  const fetchUnread = async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    try {
+      const res = await API.get(`/messages/unread/${userId}`);
+      setUnreadMsg(res.data.count || 0);
+    } catch (e) {}
   };
 
   const handleCancelAppointment = async () => {
@@ -135,12 +151,15 @@ export default function StudentDashboard() {
       const d = res.data;
       const appt = Array.isArray(d) ? (d[0] || null) : d;
       setAppt(appt);
-      // Upcoming appointment notification — within 24 h
+      // Show appointment notification whenever a PENDING appointment exists
       if (appt?.scheduleDate && appt.status === "PENDING") {
         const diffMs  = new Date(appt.scheduleDate) - new Date();
         const diffHrs = diffMs / (1000 * 60 * 60);
+        const timeStr = new Date(appt.scheduleDate).toLocaleString("en-US", { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
         if (diffHrs >= 0 && diffHrs <= 24) {
-          setUpcomingAlert(`Your appointment is today at ${new Date(appt.scheduleDate).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}!`);
+          setUpcomingAlert(`🔔 Your appointment is TODAY at ${new Date(appt.scheduleDate).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}!`);
+        } else if (diffMs > 0) {
+          setUpcomingAlert(`📅 Appointment scheduled: ${timeStr}`);
         } else {
           setUpcomingAlert(null);
         }
@@ -302,11 +321,22 @@ export default function StudentDashboard() {
       {step === "dashboard" && (
         <div className="animate-fadeIn" style={p.dashWrap}>
 
-          {/* Upcoming appointment alert */}
+          {/* Appointment notification */}
           {upcomingAlert && (
             <div style={p.upcomingBanner}>
-              <span style={{ fontSize:"18px" }}>🔔</span>
               <span style={p.upcomingText}>{upcomingAlert}</span>
+            </div>
+          )}
+
+          {/* Unread message notification */}
+          {unreadMsg > 0 && (
+            <div
+              style={{ ...p.upcomingBanner, background:"rgba(108,99,255,0.15)", borderColor:"rgba(108,99,255,0.4)", cursor:"pointer", marginTop: upcomingAlert ? "8px" : "0" }}
+              onClick={() => navigate("/chat")}
+            >
+              <span style={{ ...p.upcomingText, color:"#a78bfa" }}>
+                💬 You have {unreadMsg} unread message{unreadMsg > 1 ? "s" : ""} from your counselor — tap to reply
+              </span>
             </div>
           )}
 
@@ -424,23 +454,6 @@ export default function StudentDashboard() {
             </button>
           </div>
 
-          {/* 🧄 Ad Banner */}
-          <div style={p.adCard}>
-            <img
-              src="https://upload.wikimedia.org/wikipedia/commons/4/48/Cabanatuan_garlic_longganisa6.jpg"
-              alt="Cabanatuan Garlic Longganisa"
-              style={p.adImg}
-            />
-            <div style={p.adContent}>
-              <span style={p.adTag}>Featured Local Product 🇵🇭</span>
-              <h3 style={p.adTitle}>Cabanatuan Garlic Longganisa</h3>
-              <p style={p.adDesc}>
-                Nueva Ecija's pride — sweet, garlicky, and bursting with flavor.
-                The perfect breakfast treat to brighten your morning! 🧄🌟
-              </p>
-              <span style={p.adCta}>Order now at your local market →</span>
-            </div>
-          </div>
         </div>
       )}
 

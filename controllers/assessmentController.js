@@ -141,8 +141,8 @@ exports.createAssessment = async (req, res) => {
         status: { $in: ["PENDING", "ONGOING"] }
       });
       if (!existingAppt) {
-        // Check if a slot is available 5 days out
-        const daysOut = 5;
+        // Schedule LOW risk 2 days out (next available slot from then)
+        const daysOut = 2;
         const slotDate = await findNextAvailableSlot(daysOut);
         // Only schedule if it falls within a reasonable window (≤ 14 days)
         const daysDiff = Math.ceil((slotDate - new Date()) / (1000 * 60 * 60 * 24));

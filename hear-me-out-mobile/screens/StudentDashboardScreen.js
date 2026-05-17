@@ -12,11 +12,47 @@ import MoodCalendar from "../components/MoodCalendar";
 const LOGO = require("../assets/logo.png");
 
 /* ─── constants ────────────────────────────────────── */
+const MOOD_QUOTES = {
+  HAPPY: [
+    "Your joy matters — let it fill every corner of your day. Keep shining! 🌟",
+    "Happiness looks good on you. Carry this feeling forward and share it generously. 😊",
+    "You are allowed to feel this good. Celebrate the small wins — they add up to great things. 🎉",
+    "Good days are proof that great ones are possible. Enjoy every moment of this one! 🌈",
+    "Your smile is contagious. The world is genuinely better because you are in it today. 💛",
+  ],
+  SAD: [
+    "It takes real strength to sit with hard feelings. Every storm runs out of rain. 💙",
+    "You don't have to be okay right now. Rest, and come back stronger. 🌙",
+    "Sadness is not weakness — it means you cared deeply. That's a beautiful thing. 💜",
+    "Even the darkest night will end, and the sun will rise again. You are not alone. 🌅",
+    "Tears water the seeds of your next growth. Be gentle with yourself today. 🌱",
+  ],
+  STRESSED: [
+    "You have survived 100% of your hardest days. Take one slow breath — you are enough. 🌿",
+    "Progress, not perfection. You are doing better than you think. One step at a time. 🚶",
+    "Stress means you care. Channel it into focus, and watch what you can accomplish. 💪",
+    "Put down what you can't carry alone. Asking for help is a sign of wisdom, not weakness. 🤝",
+    "Your mind is full right now. Pause, breathe, and do just the next small thing. That's enough. 🍃",
+  ],
+  ANXIOUS: [
+    "Right here, right now — you are safe. This wave will pass, and you will still be standing. 🌈",
+    "Breathe in for 4 counts, hold for 4, out for 4. You are in control of this moment. 🧘",
+    "Anxiety is not a fact — it's a feeling. Feelings pass. You are bigger than your worry. 🌸",
+    "You've faced uncertainty before and made it through. You have everything you need. ✨",
+    "Ground yourself: name 5 things you see, 4 you feel, 3 you hear. You are here. You are okay. 🕊️",
+  ],
+};
+
+const pickQuote = (key) => {
+  const list = MOOD_QUOTES[key] || ["Stay positive and take care of yourself."];
+  return list[Math.floor(Math.random() * list.length)];
+};
+
 const MOODS = [
-  { key: "HAPPY",    emoji: "😊", label: "Happy",    gradient: ["#4ECDC4","#44A08D"], glow: "#4ECDC4", quote: "Your joy matters — let it fill every corner of your day. You deserve every bit of this happiness. Keep shining, the world is brighter with you in it! 🌟" },
-  { key: "SAD",      emoji: "😢", label: "Sad",      gradient: ["#6C63FF","#9B59B6"], glow: "#6C63FF", quote: "It takes real strength to sit with hard feelings. You are not alone in this — every storm runs out of rain. Reaching out today is already an act of courage. 💙" },
-  { key: "STRESSED", emoji: "😫", label: "Stressed", gradient: ["#F7971E","#FFD200"], glow: "#F7971E", quote: "You have survived 100% of your hardest days — that record stays perfect. Take one slow breath. You don't have to solve everything right now. You are enough. 🌿" },
-  { key: "ANXIOUS",  emoji: "😰", label: "Anxious",  gradient: ["#FF6B6B","#FF8E53"], glow: "#FF6B6B", quote: "Right here, right now — you are safe. Anxiety is your mind trying to protect you, not predict the future. This wave will pass, and you will still be standing. 🌈" },
+  { key: "HAPPY",    emoji: "😊", label: "Happy",    gradient: ["#4ECDC4","#44A08D"], glow: "#4ECDC4" },
+  { key: "SAD",      emoji: "😢", label: "Sad",      gradient: ["#6C63FF","#9B59B6"], glow: "#6C63FF" },
+  { key: "STRESSED", emoji: "😫", label: "Stressed", gradient: ["#F7971E","#FFD200"], glow: "#F7971E" },
+  { key: "ANXIOUS",  emoji: "😰", label: "Anxious",  gradient: ["#FF6B6B","#FF8E53"], glow: "#FF6B6B" },
 ];
 
 const STATUS_META = {
@@ -105,7 +141,13 @@ export default function StudentDashboardScreen({ navigation, route }) {
       const d    = res.data;
       const appt = Array.isArray(d) ? (d[0] || null) : d;
 
-      if (!firstLoadRef.current) {
+      if (firstLoadRef.current) {
+        // On first load — show notification if appointment already exists
+        if (appt?.scheduleDate && (appt.status === "PENDING" || appt.status === "ONGOING")) {
+          const dt = new Date(appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+          addNotif(`📅 You have an appointment scheduled: ${dt}`, "info");
+        }
+      } else {
         const prev = prevApptRef.current;
         if (!prev && appt) {
           addNotif("📋 An appointment has been scheduled for you.", "info");
@@ -122,7 +164,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
           const newDate  = appt.scheduleDate ? String(appt.scheduleDate) : null;
           if (newDate && prevDate !== newDate) {
             const dt = new Date(appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-            addNotif(`📅 Your appointment has been scheduled for ${dt}.`, "info");
+            addNotif(`📅 Your appointment has been rescheduled to ${dt}.`, "info");
           }
         }
       }
@@ -195,7 +237,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   const handleMoodPress = (mood) => {
     Animated.spring(scaleAnim, { toValue: 1, tension: 150, friction: 6, useNativeDriver: true }).start();
-    setSelectedMood(mood);
+    setSelectedMood({ ...mood, quote: pickQuote(mood.key) });
     setStep("note");
   };
 
