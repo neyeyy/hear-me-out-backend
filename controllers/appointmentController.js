@@ -308,7 +308,7 @@ exports.checkAssessment = async (req, res) => {
 exports.createAppointment = async (req, res) => {
   try {
     const studentId = req.user.id;
-    const { scheduleDate: requestedDate } = req.body;
+    const { scheduleDate: requestedDate } = req.body || {};
 
     const existing = await Appointment.findOne({
       studentId,
@@ -461,7 +461,7 @@ exports.cancelAppointment = async (req, res) => {
   try {
     const { id } = req.params;
     const studentId = req.user.id;
-    const { cancelReason } = req.body;
+    const { cancelReason } = req.body || {};
 
     const appointment = await Appointment.findById(id);
     if (!appointment)
@@ -503,7 +503,7 @@ exports.getAppointmentHistory = async (req, res) => {
 exports.updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, scheduleDate, isUrgent } = req.body;
+    const { status, scheduleDate, isUrgent } = req.body || {};
 
     const existingAppt = await Appointment.findById(id);
     if (!existingAppt) {

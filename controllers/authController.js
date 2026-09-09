@@ -6,7 +6,7 @@ const crypto = require('crypto');
 // REGISTER
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, yearLevel } = req.body;
+    const { name, email, password, yearLevel } = req.body || {};
     if (!name || !email || !password)
       return res.json({ success: false, message: "All fields are required" });
     if (password.length < 6)
@@ -34,7 +34,7 @@ exports.register = async (req, res) => {
 // LOGIN
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
     if (!email || !password)
       return res.json({ success: false, message: "Email and password are required" });
 
@@ -60,7 +60,7 @@ exports.login = async (req, res) => {
 // CHANGE PASSWORD
 exports.changePassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword } = req.body || {};
     const userId = req.user.id;
 
     if (!currentPassword || !newPassword)
@@ -86,7 +86,7 @@ exports.changePassword = async (req, res) => {
 // FORGOT PASSWORD — generates a 6-char recovery code
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body || {};
     if (!email) return res.json({ success: false, message: "Email is required" });
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
@@ -114,7 +114,7 @@ exports.forgotPassword = async (req, res) => {
 // RESET PASSWORD — validates code and sets new password
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
+    const { email, code, newPassword } = req.body || {};
 
     if (!email || !code || !newPassword)
       return res.json({ success: false, message: "All fields are required" });

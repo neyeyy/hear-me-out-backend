@@ -80,7 +80,7 @@ const getMotivation = (mood) => {
 exports.createMood = async (req, res) => {
   try {
     const studentId = req.user.id;
-    const { mood, note } = req.body;
+    const { mood, note } = req.body || {};
 
     // ❗ Validation
     if (!mood) {

@@ -134,7 +134,7 @@ exports.createAssessment = async (req, res) => {
     console.log("🔥 createAssessment HIT");
 
     const studentId = req.user.id;
-    const { answers } = req.body;
+    const { answers } = req.body || {};
 
     if (!answers || !Array.isArray(answers)) {
       return res.json({
