@@ -23,7 +23,44 @@ function skipToWeekday(date) {
   return d;
 }
 
-async function findNextAvailableSlot(daysFromNow) {
+// Session length by severity — a more severe case gets a longer session.
+const DURATION_BY_SEVERITY = { HIGH: 60, MEDIUM: 60, LOW: 30 };
+function durationFor(severity) { return DURATION_BY_SEVERITY[severity] || 30; }
+
+// Older appointments (created before session lengths existed) have no
+// durationMinutes stored — derive it from their severity instead of
+// silently treating them as a 30-min LOW session.
+function effectiveDuration(appt) { return appt.durationMinutes || durationFor(appt.severity); }
+
+// A slot must not run into the 12–1 PM lunch break or past the 4 PM close.
+function slotFitsOfficeHours(slot, durationMinutes) {
+  const startMin = slot.h * 60 + slot.m;
+  const endMin   = startMin + durationMinutes;
+  const LUNCH_START = 12 * 60, CLOSE = 16 * 60;
+  return startMin < LUNCH_START ? endMin <= LUNCH_START : endMin <= CLOSE;
+}
+
+// Does [candidateStart, candidateStart+durationMinutes) overlap any existing
+// active appointment that day? Each uses its OWN stored duration (older
+// records default to 30 min).
+async function hasOverlap(candidateStart, durationMinutes) {
+  const dayStart = new Date(candidateStart); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd   = new Date(candidateStart); dayEnd.setHours(23, 59, 59, 999);
+
+  const existing = await Appointment.find({
+    scheduleDate: { $gte: dayStart, $lte: dayEnd },
+    status: { $in: ['PENDING', 'ONGOING'] },
+  });
+  const candidateEnd = new Date(candidateStart.getTime() + durationMinutes * 60000);
+
+  return existing.some(a => {
+    const aStart = new Date(a.scheduleDate);
+    const aEnd   = new Date(aStart.getTime() + effectiveDuration(a) * 60000);
+    return candidateStart < aEnd && aStart < candidateEnd;
+  });
+}
+
+async function findNextAvailableSlot(daysFromNow, durationMinutes = 30) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -32,27 +69,11 @@ async function findNextAvailableSlot(daysFromNow) {
   candidate = skipToWeekday(candidate);
 
   for (let attempt = 0; attempt < 30; attempt++) {
-    const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
-
-    const existing = await Appointment.find({
-      scheduleDate: { $gte: dayStart, $lte: dayEnd },
-      status: { $in: ['PENDING', 'ONGOING'] },
-    });
-
-    const booked = new Set(
-      existing.map(a => {
-        const d = new Date(a.scheduleDate);
-        return `${d.getHours()}:${d.getMinutes()}`;
-      })
-    );
-
     for (const slot of TIME_SLOTS) {
-      if (!booked.has(`${slot.h}:${slot.m}`)) {
-        const result = new Date(candidate);
-        result.setHours(slot.h, slot.m, 0, 0);
-        return result;
-      }
+      if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
+      const result = new Date(candidate);
+      result.setHours(slot.h, slot.m, 0, 0);
+      if (!(await hasOverlap(result, durationMinutes))) return result;
     }
 
     candidate.setDate(candidate.getDate() + 1);
@@ -83,13 +104,15 @@ const createAutoAppointment = async (studentId, severity, source) => {
 
     // Days out by severity: HIGH=1, MEDIUM=3
     const daysOut = severity === "HIGH" ? 1 : 3;
-    const scheduleDate = await findNextAvailableSlot(daysOut);
+    const durationMinutes = durationFor(severity);
+    const scheduleDate = await findNextAvailableSlot(daysOut, durationMinutes);
 
     const appointment = await Appointment.create({
       studentId,
       severity,
       assignedTo: "Guidance Counselor",
       scheduleDate,
+      durationMinutes,
       status: "PENDING",
       source
     });
@@ -143,7 +166,8 @@ exports.createAssessment = async (req, res) => {
       if (!existingAppt) {
         // Schedule LOW risk 2 days out (next available slot from then)
         const daysOut = 2;
-        const slotDate = await findNextAvailableSlot(daysOut);
+        const durationMinutes = durationFor("LOW");
+        const slotDate = await findNextAvailableSlot(daysOut, durationMinutes);
         // Only schedule if it falls within a reasonable window (≤ 14 days)
         const daysDiff = Math.ceil((slotDate - new Date()) / (1000 * 60 * 60 * 24));
         if (daysDiff <= 14) {
@@ -152,6 +176,7 @@ exports.createAssessment = async (req, res) => {
             severity: "LOW",
             assignedTo: "Student Assistant",
             scheduleDate: slotDate,
+            durationMinutes,
             status: "PENDING",
             source: "assessment"
           });

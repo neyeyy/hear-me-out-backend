@@ -85,10 +85,12 @@ export default function Register() {
                 style={{ ...s.input, flex: 1, cursor: "pointer" }}
               >
                 <option value="">Select year level</option>
-                <option value="1st">1st Year</option>
-                <option value="2nd">2nd Year</option>
-                <option value="3rd">3rd Year</option>
-                <option value="4th">4th Year</option>
+                <option value="Grade 11">Grade 11</option>
+                <option value="Grade 12">Grade 12</option>
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
               </select>
             </div>
           </div>

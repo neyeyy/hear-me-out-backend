@@ -10,6 +10,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const Message = require('./models/Message');
+const { checkMissedAppointments, checkVacancyOffers } = require('./controllers/appointmentController');
 
 const app = express();
 const server = http.createServer(app);
@@ -35,6 +36,7 @@ function rateLimit(windowMs, max) {
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
+app.set('io', io); // lets route handlers push live updates (req.app.get('io'))
 
 // MIDDLEWARE
 app.use(cors());
@@ -93,6 +95,10 @@ io.on('connection', (socket) => {
         seen:     false
       });
       io.to(String(data.roomId)).emit('receiveMessage', newMessage);
+      // Room-scoped emit above only reaches sockets that already joined that
+      // room (i.e. someone with that chat open) — this global ping lets any
+      // connected dashboard refresh its conversation list immediately too.
+      io.emit('newMessageAlert', { roomId: String(data.roomId), senderId: String(data.senderId) });
     } catch (error) {
       console.log("❌ Chat error:", error.message);
     }
@@ -128,6 +134,14 @@ io.on('connection', (socket) => {
     console.log("🔴 User disconnected:", socket.id);
   });
 });
+
+// Expire missed appointments + notify students on a recurring sweep
+setInterval(() => checkMissedAppointments(io), 5 * 60 * 1000);
+checkMissedAppointments(io);
+
+// Offer today's open slots to tomorrow's students once the PM session starts
+setInterval(() => checkVacancyOffers(io), 30 * 60 * 1000);
+checkVacancyOffers(io);
 
 // START SERVER
 const PORT      = process.env.PORT      || 5000;

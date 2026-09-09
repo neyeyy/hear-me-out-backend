@@ -1,6 +1,5 @@
 const express  = require("express");
 const router   = express.Router();
-const Anthropic = require("@anthropic-ai/sdk");
 
 const User        = require("../models/User");
 const Mood        = require("../models/Mood");
@@ -60,48 +59,13 @@ router.get("/dashboard", async (req, res) => {
       pendingAppointments,
       completedAppointments,
       moods,
-      yearLevelBreakdown:  yearLevelRaw,
+      yearLevelBreakdown: yearLevelRaw,
       severityByYear,
     });
 
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Server error" });
-  }
-});
-
-// POST /api/analytics/ai-recommendation
-// Body: { analytics: { ... } }  — pass the dashboard data from the client
-router.post("/ai-recommendation", async (req, res) => {
-  try {
-    const data = req.body.analytics || {};
-
-    const prompt = `You are a school guidance counselor assistant. Analyze the following mental health analytics data from a university student wellness system and provide 3–5 clear, actionable recommendations for the counseling team. Be concise and specific. Use bullet points.
-
-Analytics data:
-- Total students: ${data.totalStudents ?? "N/A"}
-- High-risk students (latest assessment): ${data.highRisk ?? "N/A"}
-- Pending appointments: ${data.pendingAppointments ?? "N/A"}
-- Completed appointments: ${data.completedAppointments ?? "N/A"}
-- Mood distribution: ${JSON.stringify(data.moods ?? [])}
-- Year level breakdown: ${JSON.stringify(data.yearLevelBreakdown ?? [])}
-- Severity by year level: ${JSON.stringify(data.severityByYear ?? [])}
-
-Provide recommendations:`;
-
-    const client = new Anthropic();
-    const message = await client.messages.create({
-      model:      "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      messages:   [{ role: "user", content: prompt }],
-    });
-
-    const recommendation = message.content[0]?.text || "No recommendation available.";
-    res.json({ success: true, recommendation });
-
-  } catch (err) {
-    console.error("AI recommendation error:", err.message);
-    res.status(500).json({ success: false, message: "AI recommendation failed." });
   }
 });
 

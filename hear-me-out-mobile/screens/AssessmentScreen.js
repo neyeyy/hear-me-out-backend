@@ -103,7 +103,14 @@ export default function AssessmentScreen({ navigation }) {
           addBotMessage("⚠️ We recommend immediate counseling.");
         }
         if (res.data.appointment) {
-          addBotMessage("📅 An appointment has been scheduled for you.");
+          const dateStr = res.data.appointment.scheduleDate
+            ? new Date(res.data.appointment.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+            : null;
+          addBotMessage(
+            dateStr
+              ? `📅 An appointment has been scheduled for you on ${dateStr}.`
+              : "📅 An appointment has been scheduled for you."
+          );
         }
         if (res.data.severity === "MEDIUM" && !res.data.appointment) {
           addBotMessage("💬 You may consider talking to a counselor.");

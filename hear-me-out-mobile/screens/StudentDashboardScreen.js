@@ -94,6 +94,8 @@ export default function StudentDashboardScreen({ navigation, route }) {
   // cancel + history
   const [history,    setHistory]    = useState([]);
   const [cancelMsg,  setCancelMsg]  = useState({ text:"", ok:false });
+  const [requestMsg, setRequestMsg] = useState({ text:"", ok:false });
+  const [requesting, setRequesting] = useState(false);
 
   // refs
   const prevApptRef   = useRef(null);
@@ -150,7 +152,10 @@ export default function StudentDashboardScreen({ navigation, route }) {
       } else {
         const prev = prevApptRef.current;
         if (!prev && appt) {
-          addNotif("📋 An appointment has been scheduled for you.", "info");
+          const dt = appt.scheduleDate
+            ? new Date(appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+            : null;
+          addNotif(dt ? `📋 An appointment has been scheduled for you: ${dt}` : "📋 An appointment has been scheduled for you.", "info");
         } else if (prev && appt) {
           if (prev.status !== appt.status) {
             const msgs = {
@@ -181,6 +186,26 @@ export default function StudentDashboardScreen({ navigation, route }) {
       const res = await API.get("/appointments/history");
       if (res.data.success) setHistory(res.data.appointments || []);
     } catch (e) { /* silent */ }
+  };
+
+  /* ─── request an appointment ── */
+  const handleRequestAppointment = async () => {
+    setRequesting(true);
+    setRequestMsg({ text:"", ok:false });
+    try {
+      const res = await API.post("/appointments");
+      if (res.data.success) {
+        setRequestMsg({ text:"Appointment scheduled!", ok:true });
+        fetchAppointment();
+        fetchHistory();
+      } else {
+        setRequestMsg({ text: res.data.message || "Could not schedule an appointment.", ok:false });
+      }
+    } catch (e) {
+      setRequestMsg({ text: e.response?.data?.message || "Error scheduling appointment.", ok:false });
+    } finally {
+      setRequesting(false);
+    }
   };
 
   /* ─── cancel appointment ── */
@@ -397,6 +422,20 @@ export default function StudentDashboardScreen({ navigation, route }) {
                     <Text style={{ fontSize:28, marginBottom:8 }}>📋</Text>
                     <Text style={s.noApptText}>No appointment scheduled yet</Text>
                     <Text style={s.noApptSub}>Complete your mood check-in to get started</Text>
+                    <TouchableOpacity
+                      onPress={handleRequestAppointment}
+                      disabled={requesting}
+                      style={[s.requestApptBtn, requesting && { opacity: 0.7 }]}
+                    >
+                      <Text style={s.requestApptBtnText}>
+                        {requesting ? "Scheduling…" : "📅 Schedule an Appointment"}
+                      </Text>
+                    </TouchableOpacity>
+                    {!!requestMsg.text && (
+                      <Text style={{ color: requestMsg.ok ? "#4ECDC4" : "#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginTop:8 }}>
+                        {requestMsg.text}
+                      </Text>
+                    )}
                   </View>
                 )}
               </View>
@@ -813,6 +852,11 @@ const s = StyleSheet.create({
   noApptSub: { fontSize:12, color:"rgba(255,255,255,0.3)", marginTop:4, textAlign:"center" },
   cancelApptBtn: { borderWidth:1.5, borderColor:"rgba(248,113,113,0.4)", borderRadius:10, paddingVertical:10, alignItems:"center" },
   cancelApptBtnText: { color:"#F87171", fontSize:13, fontWeight:"700" },
+  requestApptBtn: {
+    backgroundColor:"#6C63FF", borderRadius:10, paddingVertical:12,
+    alignItems:"center", width:"100%", marginTop:14,
+  },
+  requestApptBtnText: { color:"#fff", fontSize:13, fontWeight:"700" },
 
   btnRow: { flexDirection:"row", gap:10, marginBottom:20 },
   trackMoodBtn: {

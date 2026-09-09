@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
+import API from "../services/api";
 
 const socket = io("https://hear-me-out-backend-production.up.railway.app");
 
@@ -15,6 +16,8 @@ export default function ChatScreen({ navigation }) {
   const [isTyping, setIsTyping] = useState(false);
   const [userId, setUserId] = useState(null);
   const [roomId, setRoomId] = useState(null);
+  const [reschedulingId, setReschedulingId] = useState(null);
+  const [rescheduledIds, setRescheduledIds] = useState({});
 
   const flatRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -80,27 +83,76 @@ export default function ChatScreen({ navigation }) {
     return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  // Recognize the two automated notices and what action/label each takes
+  const getSystemAction = (item) => {
+    if (item.senderId !== "system") return null;
+    const text = item.message || "";
+    if (text.startsWith("You missed your schedule")) {
+      return { endpoint: "/appointments", label: "📅 Reschedule Appointment" };
+    }
+    if (text.startsWith("Hello, we have a vacant schedule today")) {
+      return { endpoint: "/appointments/accept-vacancy", label: "✅ Yes, move me to today" };
+    }
+    return null;
+  };
+
+  const handleSystemAction = async (item, endpoint) => {
+    if (reschedulingId) return;
+    setReschedulingId(item._id);
+    try {
+      const res = await API.post(endpoint);
+      const confirmText = res.data.success && res.data.appointment?.scheduleDate
+        ? `✅ New appointment scheduled: ${new Date(res.data.appointment.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`
+        : (res.data.message || "Could not schedule an appointment right now.");
+      socket.emit("sendMessage", {
+        roomId:   String(roomId),
+        senderId: String(userId),
+        message:  confirmText,
+      });
+      setRescheduledIds((prev) => ({ ...prev, [item._id]: true }));
+    } catch (e) {
+      console.log("System action error:", e);
+    } finally {
+      setReschedulingId(null);
+    }
+  };
+
   const renderMessage = ({ item, index }) => {
-    const isMe   = String(item.senderId) === String(userId);
+    const isMe = String(item.senderId) === String(userId);
     const isLast = index === messages.length - 1;
+    const action = getSystemAction(item);
+    const showAction = action && !rescheduledIds[item._id];
     return (
-      <View style={[styles.msgRow, isMe ? styles.msgRowMe : styles.msgRowThem]}>
-        {!isMe && (
-          <View style={styles.theirAvatar}>
-            <Text style={{ fontSize: 14 }}>👨‍⚕️</Text>
-          </View>
-        )}
-        <View style={isMe ? styles.myBubble : styles.theirBubble}>
-          <Text style={isMe ? styles.myBubbleText : styles.theirBubbleText}>
-            {item.message}
-          </Text>
-          <View style={styles.metaRow}>
-            <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
-            {isMe && isLast && (
-              <Text style={styles.seenText}>{item.seen ? " ✓✓" : " ✓"}</Text>
-            )}
+      <View>
+        <View style={[styles.msgRow, isMe ? styles.msgRowMe : styles.msgRowThem]}>
+          {!isMe && (
+            <View style={styles.theirAvatar}>
+              <Text style={{ fontSize: 14 }}>👨‍⚕️</Text>
+            </View>
+          )}
+          <View style={isMe ? styles.myBubble : styles.theirBubble}>
+            <Text style={isMe ? styles.myBubbleText : styles.theirBubbleText}>
+              {item.message}
+            </Text>
+            <View style={styles.metaRow}>
+              <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
+              {isMe && isLast && (
+                <Text style={styles.seenText}>{item.seen ? " ✓✓" : " ✓"}</Text>
+              )}
+            </View>
           </View>
         </View>
+        {showAction && (
+          <TouchableOpacity
+            onPress={() => handleSystemAction(item, action.endpoint)}
+            disabled={reschedulingId === item._id}
+            style={[styles.rescheduleBtn, reschedulingId === item._id && { opacity: 0.6 }]}
+          >
+            <Text style={styles.rescheduleBtnText}>
+              {reschedulingId === item._id ? "Scheduling…" : action.label}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -252,6 +304,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
   },
   theirBubbleText: { color: "#1A1A2E", fontSize: 14, lineHeight: 20 },
+  rescheduleBtn: {
+    alignSelf: "flex-start", marginLeft: 32, marginBottom: 10, marginTop: -2,
+    backgroundColor: "#6C63FF", borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8,
+    shadowColor: "#6C63FF", shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25, shadowRadius: 6, elevation: 3,
+  },
+  rescheduleBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   metaRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 4 },
   timeText: { fontSize: 9, opacity: 0.65, color: "inherit" },
   seenText: { fontSize: 9, opacity: 0.65 },

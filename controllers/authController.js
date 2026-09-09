@@ -17,7 +17,7 @@ exports.register = async (req, res) => {
       return res.json({ success: false, message: "Email already registered" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const validYearLevels = ['1st', '2nd', '3rd', '4th'];
+    const validYearLevels = ['Grade 11', 'Grade 12', '1st Year', '2nd Year', '3rd Year', '4th Year'];
     await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),

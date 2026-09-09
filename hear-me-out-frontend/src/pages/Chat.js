@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import API from "../services/api";
 
-const socket = io("https://hear-me-out-backend-production.up.railway.app", {
+const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend-production.up.railway.app", {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionAttempts: Infinity,
@@ -31,6 +31,44 @@ function Chat() {
   const typingTimeoutRef = useRef(null);
   const activeRoomRef    = useRef(activeRoom);
   useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
+
+  // ── Automated system notices → one-click action buttons ──
+  const [reschedulingId, setReschedulingId] = useState(null);
+  const [rescheduledIds, setRescheduledIds] = useState(new Set());
+
+  // Recognize the two automated notices and what action/label each takes
+  const getSystemAction = (msg) => {
+    if (msg.senderId !== "system") return null;
+    const text = msg.message || "";
+    if (text.startsWith("You missed your schedule")) {
+      return { endpoint: "/appointments", label: "📅 Reschedule Appointment" };
+    }
+    if (text.startsWith("Hello, we have a vacant schedule today")) {
+      return { endpoint: "/appointments/accept-vacancy", label: "✅ Yes, move me to today" };
+    }
+    return null;
+  };
+
+  const handleSystemAction = async (msg, endpoint) => {
+    if (reschedulingId) return;
+    setReschedulingId(msg._id);
+    try {
+      const res = await API.post(endpoint);
+      const confirmText = res.data.success && res.data.appointment?.scheduleDate
+        ? `✅ New appointment scheduled: ${new Date(res.data.appointment.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`
+        : (res.data.message || "Could not schedule an appointment right now.");
+      socket.emit("sendMessage", {
+        roomId:   String(activeRoom),
+        senderId: String(userId),
+        message:  confirmText,
+      });
+      setRescheduledIds(prev => new Set(prev).add(msg._id));
+    } catch (e) {
+      console.log("System action error:", e);
+    } finally {
+      setReschedulingId(null);
+    }
+  };
 
   // ── Load conversations for counselor sidebar ─────────────────
   const loadConversations = useCallback(async () => {
@@ -188,37 +226,49 @@ function Chat() {
       )}
 
       {messages.map((msg, i) => {
-        const isMe   = String(msg.senderId) === String(userId);
-        const isLast = i === messages.length - 1;
+        const isMe      = String(msg.senderId) === String(userId);
+        const isLast    = i === messages.length - 1;
+        const action    = isStudent ? getSystemAction(msg) : null;
+        const showAction = action && !rescheduledIds.has(msg._id);
         return (
           <div
             key={i}
             style={{
               display: "flex",
-              justifyContent: isMe ? "flex-end" : "flex-start",
+              flexDirection: "column",
+              alignItems: isMe ? "flex-end" : "flex-start",
               marginBottom: "6px",
-              alignItems: "flex-end",
-              gap: "8px",
             }}
           >
-            {!isMe && (
-              <div style={s.msgAvatar}>
-                {isStudent
-                  ? "👨‍⚕️"
-                  : (activeStudent?.studentName?.[0]?.toUpperCase() || "🎓")}
-              </div>
-            )}
-            <div style={isMe ? s.myBubble : s.theirBubble}>
-              <span style={s.msgText}>{msg.message}</span>
-              <div style={s.msgMeta}>
-                <span>{formatMsgTime(msg.createdAt)}</span>
-                {isMe && isLast && (
-                  <span style={{ marginLeft: "4px" }}>
-                    {msg.seen ? "✓✓" : "✓"}
-                  </span>
-                )}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "8px" }}>
+              {!isMe && (
+                <div style={s.msgAvatar}>
+                  {isStudent
+                    ? "👨‍⚕️"
+                    : (activeStudent?.studentName?.[0]?.toUpperCase() || "🎓")}
+                </div>
+              )}
+              <div style={isMe ? s.myBubble : s.theirBubble}>
+                <span style={s.msgText}>{msg.message}</span>
+                <div style={s.msgMeta}>
+                  <span>{formatMsgTime(msg.createdAt)}</span>
+                  {isMe && isLast && (
+                    <span style={{ marginLeft: "4px" }}>
+                      {msg.seen ? "✓✓" : "✓"}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
+            {showAction && (
+              <button
+                onClick={() => handleSystemAction(msg, action.endpoint)}
+                disabled={reschedulingId === msg._id}
+                style={{ ...s.rescheduleBtn, marginLeft: "36px", opacity: reschedulingId === msg._id ? 0.6 : 1 }}
+              >
+                {reschedulingId === msg._id ? "Scheduling…" : action.label}
+              </button>
+            )}
           </div>
         );
       })}
@@ -773,6 +823,19 @@ const s = {
     borderRadius: "18px 18px 18px 4px",
     maxWidth:     "72%",
     boxShadow:    "0 2px 8px rgba(0,0,0,0.08)",
+  },
+  rescheduleBtn: {
+    marginTop:    "6px",
+    padding:      "8px 14px",
+    background:   "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
+    color:        "#fff",
+    border:       "none",
+    borderRadius: "99px",
+    fontSize:     "13px",
+    fontWeight:   700,
+    fontFamily:   "'Poppins',sans-serif",
+    cursor:       "pointer",
+    boxShadow:    "0 4px 12px rgba(91,107,216,0.3)",
   },
   msgText: {
     display:    "block",

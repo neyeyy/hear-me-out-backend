@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 import logo from "../logo.png";
 
-const socket = io("https://hear-me-out-backend-production.up.railway.app", {
+const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend-production.up.railway.app", {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionAttempts: Infinity,
@@ -12,8 +12,9 @@ const socket = io("https://hear-me-out-backend-production.up.railway.app", {
 });
 
 /* ─── constants ──────────────────────────────────────────── */
-const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8" };
-const SEV_BG    = { HIGH: "#FFF0EE", MEDIUM: "#FFF8EC", LOW: "#E6FAF7" };
+const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8", MISSED: "#9CA3AF" };
+const SEV_BG    = { HIGH: "#FFF0EE", MEDIUM: "#FFF8EC", LOW: "#E6FAF7", MISSED: "#F1F2F6" };
+const SESSION_MINUTES = { HIGH: 60, MEDIUM: 60, LOW: 30 };
 const SEV_ORDER = { HIGH: 1, MEDIUM: 2, LOW: 3 };
 
 const MOOD_META = {
@@ -88,15 +89,15 @@ export default function CounselorDashboard() {
   const [chatInput,      setChatInput]      = useState("");
   const [chatTyping,     setChatTyping]     = useState(false);
   const [chatSearch,     setChatSearch]     = useState("");
-  // AI recommendation
-  const [aiRec,          setAiRec]          = useState("");
-  const [aiLoading,      setAiLoading]      = useState(false);
   const [urgentLoading,  setUrgentLoading]  = useState(null);
   // notifications
   const [notifOpen,      setNotifOpen]      = useState(false);
   const [notifs,         setNotifs]         = useState([]);
   const [notifFilter,    setNotifFilter]    = useState("all");
+  const [toast,          setToast]          = useState(null);
+  const toastTimerRef    = useRef(null);
   const notifSeenRef     = useRef(new Set(JSON.parse(localStorage.getItem("notifSeen") || "[]")));
+  const lastKnownUnreadRef = useRef({});
   const chatEndRef       = useRef(null);
   const chatRoomRef      = useRef(null);
   const schedInitRef     = useRef(false);
@@ -111,6 +112,14 @@ export default function CounselorDashboard() {
       .finally(() => setLoading(false));
     const iv = setInterval(() => { fetchStudents(); fetchAppointments(); }, 15000);
     return () => clearInterval(iv);
+  }, []); // eslint-disable-line
+
+  // Push-driven refresh — appointment created/cancelled/rescheduled/missed
+  // anywhere updates this dashboard immediately instead of waiting on the poll.
+  useEffect(() => {
+    const onAppointmentsChanged = () => fetchAppointments();
+    socket.on("appointmentsChanged", onAppointmentsChanged);
+    return () => socket.off("appointmentsChanged", onAppointmentsChanged);
   }, []); // eslint-disable-line
 
   const fetchStudents = async () => {
@@ -141,6 +150,13 @@ export default function CounselorDashboard() {
     } catch (e) { console.log(e); }
   };
 
+  // Pop a toast in the corner for ~5s, restarting the timer if another arrives
+  const showToast = useCallback((text) => {
+    clearTimeout(toastTimerRef.current);
+    setToast(text);
+    toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
   // Check for new/changed appointments and push to the TOP of the feed
   const checkNotifications = useCallback(() => {
     const now = new Date();
@@ -157,6 +173,17 @@ export default function CounselorDashboard() {
       const apptTime = new Date(a.scheduleDate);
       const diffMin  = Math.round((apptTime - now) / 60000);
       const name     = typeof a.studentId === "object" ? (a.studentId.name || "Student") : "Student";
+      const roomId   = typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+
+      if (a.status === "MISSED") {
+        incoming.push({ id: key, kind: "missed", appt: a, name, roomId, addedAt: new Date() });
+        return;
+      }
+
+      if (a.status === "CANCELLED") {
+        incoming.push({ id: key, kind: "cancelled", appt: a, name, roomId, reason: a.cancelReason, addedAt: new Date() });
+        return;
+      }
 
       let type = "scheduled";
       if (a.status === "ONGOING") type = "ongoing";
@@ -170,8 +197,14 @@ export default function CounselorDashboard() {
     if (incoming.length > 0) {
       // Newest at the top — prepend incoming (sorted newest-first within batch)
       setNotifs(prev => [...incoming.reverse(), ...prev]);
+
+      if (incoming.length === 1) {
+        showToast(incoming[0]);
+      } else {
+        showToast({ kind: "summary", count: incoming.length });
+      }
     }
-  }, [apptList]);
+  }, [apptList, showToast]);
 
   useEffect(() => {
     checkNotifications();
@@ -185,6 +218,15 @@ export default function CounselorDashboard() {
       setConversations(res.data || []);
     } catch (e) { console.log(e); }
   }, []);
+
+  // Push-driven refresh — a student message anywhere refreshes the
+  // conversation list immediately (a room-scoped socket event alone won't
+  // reach us here unless that chat is already open).
+  useEffect(() => {
+    const onNewMessageAlert = () => loadConversations();
+    socket.on("newMessageAlert", onNewMessageAlert);
+    return () => socket.off("newMessageAlert", onNewMessageAlert);
+  }, [loadConversations]);
 
   // Auto-jump to the week of the nearest appointment (past OR future)
   const jumpToNearestAppt = (setOffset) => {
@@ -219,13 +261,29 @@ export default function CounselorDashboard() {
     jumpToNearestAppt(setOvWeekOffset);
   }, [tab, apptList]); // eslint-disable-line
 
-  // Refresh conversations every 15 s while chat tab is open
+  // Load conversations globally for unread badge + chat notifications
   useEffect(() => {
-    if (tab !== "chat") return;
     loadConversations();
-    const iv = setInterval(loadConversations, 15000);
+    const iv = setInterval(loadConversations, tab === "chat" ? 15000 : 30000);
     return () => clearInterval(iv);
   }, [tab, loadConversations]);
+
+  // Detect new unread chat messages and push to notifications panel
+  const checkChatNotifications = useCallback(() => {
+    conversations.forEach(conv => {
+      const prev = lastKnownUnreadRef.current[conv.roomId] || 0;
+      if (conv.unread > prev) {
+        const key = `chat_${conv.roomId}_${Date.now()}`;
+        const chatNotif = { id: key, kind: "chat", name: conv.studentName, roomId: conv.roomId,
+          unreadCount: conv.unread, lastMessage: conv.lastMessage, addedAt: new Date() };
+        setNotifs(p => [chatNotif, ...p.filter(n => !(n.kind === "chat" && n.roomId === conv.roomId))]);
+        showToast(chatNotif);
+      }
+      lastKnownUnreadRef.current[conv.roomId] = conv.unread;
+    });
+  }, [conversations, showToast]);
+
+  useEffect(() => { checkChatNotifications(); }, [checkChatNotifications]);
 
   // Keep chatRoomRef in sync
   useEffect(() => { chatRoomRef.current = chatRoom; }, [chatRoom]);
@@ -298,18 +356,6 @@ export default function CounselorDashboard() {
     finally { setUrgentLoading(null); }
   };
 
-  const handleAiRecommendation = async () => {
-    try {
-      setAiLoading(true);
-      setAiRec("");
-      const res = await API.post("/analytics/ai-recommendation", { analytics });
-      if (res.data.success) setAiRec(res.data.recommendation);
-      else setAiRec("Could not generate recommendation.");
-    } catch (e) {
-      setAiRec("AI service unavailable. Please try again later.");
-    } finally { setAiLoading(false); }
-  };
-
   const openChat = (student) => {
     setTab("chat");
     setChatRoom(student._id);
@@ -319,6 +365,8 @@ export default function CounselorDashboard() {
   };
 
   const selectConversation = (conv) => {
+    setNotifs(prev => prev.filter(n => !(n.kind === "chat" && n.roomId === conv.roomId)));
+    lastKnownUnreadRef.current[conv.roomId] = 0;
     setChatRoom(conv.roomId);
     setChatStudent({ _id: conv.roomId, name: conv.studentName, email: conv.studentEmail });
     setChatMessages([]);
@@ -389,6 +437,7 @@ export default function CounselorDashboard() {
   };
 
   /* ── derived counts ── */
+  const totalUnread = conversations.reduce((sum, c) => sum + (c.unread || 0), 0);
   const total    = students.length;
   const high     = students.filter(s => s.severity === "HIGH").length;
   const medium   = students.filter(s => s.severity === "MEDIUM").length;
@@ -412,7 +461,9 @@ export default function CounselorDashboard() {
       const q = search.toLowerCase();
       const matchSearch = (s.name  || "").toLowerCase().includes(q) ||
                           (s.email || "").toLowerCase().includes(q);
-      const matchSev = sevFilter === "ALL" || s.severity === sevFilter;
+      const matchSev = sevFilter === "MISSED"
+        ? appointments[s._id]?.status === "MISSED"
+        : s.severity === sevFilter && appointments[s._id]?.status !== "MISSED";
       return matchSearch && matchSev;
     })
     .sort((a, b) => {
@@ -431,6 +482,155 @@ export default function CounselorDashboard() {
   /* ── mood analytics ── */
   const totalMoods = analytics?.moods?.reduce((s, m) => s + m.count, 0) || 0;
 
+  // Renders one notification card — shared by the full panel list and the
+  // corner toast, so both always look identical.
+  const renderNotifCard = (n) => {
+    const now = new Date();
+    const secAgo = Math.floor((now - new Date(n.addedAt)) / 1000);
+    const relAge = secAgo < 60 ? "just now"
+      : secAgo < 3600 ? `${Math.floor(secAgo / 60)}m ago`
+      : secAgo < 86400 ? `${Math.floor(secAgo / 3600)}h ago`
+      : new Date(n.addedAt).toLocaleDateString();
+
+    const goToChat = (e) => {
+      e?.stopPropagation(); // don't let the toast wrapper's click reopen the panel
+      const sid = n.roomId || (typeof n.appt?.studentId === "object" ? n.appt.studentId._id : n.appt?.studentId);
+      const st = students.find(st => String(st._id) === String(sid));
+      if (st) openChat(st);
+      else if (n.roomId) { setChatRoom(n.roomId); setTab("chat"); }
+      setNotifOpen(false);
+    };
+
+    const goToSchedule = (e) => {
+      e.stopPropagation();
+      setNotifOpen(false);
+      setTab("schedule");
+    };
+
+    if (n.kind === "chat") {
+      return (
+        <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #5B6BD8" }}>
+          <div style={s.notifItemTop}>
+            <span style={s.notifItemName}>💬 {n.name}</span>
+            <span style={{ ...s.notifItemTag, background: "#EEF0FD", color: "#5B6BD8" }}>
+              {n.unreadCount} new {n.unreadCount === 1 ? "message" : "messages"}
+            </span>
+          </div>
+          <div style={s.notifItemMeta}>
+            <span style={{ fontSize: "12px", color: "#7B7F9E", fontStyle: "italic", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              "{n.lastMessage}"
+            </span>
+            <span style={s.notifItemTime}>{relAge}</span>
+          </div>
+          <div style={s.notifItemActions}>
+            <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+              Open Chat →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (n.kind === "missed") {
+      return (
+        <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #9CA3AF" }}>
+          <div style={s.notifItemTop}>
+            <span style={s.notifItemName}>⏰ {n.name}</span>
+            <span style={{ ...s.notifItemTag, background: "#F1F2F6", color: "#7B7F9E" }}>
+              Missed
+            </span>
+          </div>
+          <div style={s.notifItemMeta}>
+            <span style={{ fontSize: "12px", color: "#7B7F9E" }}>
+              Schedule expired — {new Date(n.appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+            </span>
+            <span style={s.notifItemTime}>{relAge}</span>
+          </div>
+          <div style={s.notifItemActions}>
+            <button onClick={goToSchedule} style={s.notifActionBtn}>
+              View Schedule →
+            </button>
+            <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+              💬 Chat
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (n.kind === "cancelled") {
+      return (
+        <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #F87171" }}>
+          <div style={s.notifItemTop}>
+            <span style={s.notifItemName}>🚫 {n.name}</span>
+            <span style={{ ...s.notifItemTag, background: "#FFF0EE", color: "#F87171" }}>
+              Cancelled
+            </span>
+          </div>
+          <div style={s.notifItemMeta}>
+            <span style={{ fontSize: "12px", color: "#7B7F9E", fontStyle: n.reason ? "italic" : "normal" }}>
+              {n.reason ? `"${n.reason}"` : `Was scheduled for ${new Date(n.appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`}
+            </span>
+            <span style={s.notifItemTime}>{relAge}</span>
+          </div>
+          <div style={s.notifItemActions}>
+            <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+              💬 Chat
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Plain appointment notification ──
+    const apptTime = new Date(n.appt.scheduleDate);
+    const diffMin  = Math.round((apptTime - now) / 60000);
+    const sameDay  = apptTime.toDateString() === now.toDateString();
+
+    const urgency = n.type === "done"    ? "done"
+      : n.type === "ongoing"             ? "ongoing"
+      : n.appt.status === "DONE"         ? "done"
+      : n.appt.status === "ONGOING"      ? "ongoing"
+      : diffMin < 0 && sameDay           ? "overdue"
+      : diffMin >= 0 && diffMin <= 15    ? "now"
+      : diffMin > 15 && diffMin <= 60    ? "soon"
+      : "scheduled";
+
+    const meta = {
+      done:      { color: "#38C9B8", bg: "#E6FAF7", icon: "✅", label: "Session done" },
+      ongoing:   { color: "#5B6BD8", bg: "#EEF0FD", icon: "🔄", label: "Session ongoing" },
+      overdue:   { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: `Overdue ${Math.abs(diffMin)}m ago` },
+      now:       { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: diffMin <= 0 ? "Starting NOW" : `In ${diffMin} min` },
+      soon:      { color: "#F9A72B", bg: "#FFF8EC", icon: "⚡", label: `In ${diffMin} min` },
+      scheduled: { color: "#5B6BD8", bg: "#EEF0FD", icon: "📅", label: apptTime.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) },
+    }[urgency];
+
+    return (
+      <div key={n.id} style={{ ...s.notifItem, borderLeft: `4px solid ${meta.color}` }}>
+        <div style={s.notifItemTop}>
+          <span style={s.notifItemName}>{n.name}</span>
+          <span style={{ ...s.notifItemTag, background: meta.bg, color: meta.color }}>
+            {meta.icon} {meta.label}
+          </span>
+        </div>
+        <div style={s.notifItemMeta}>
+          <span style={{ ...s.notifItemSev, color: SEV_COLOR[n.appt.severity] }}>
+            {n.appt.severity}
+          </span>
+          <span style={s.notifItemTime}>{relAge}</span>
+        </div>
+        <div style={s.notifItemActions}>
+          <button onClick={goToSchedule} style={s.notifActionBtn}>
+            View Schedule →
+          </button>
+          <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+            💬 Chat
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div style={s.loadingScreen}>
@@ -442,6 +642,29 @@ export default function CounselorDashboard() {
 
   return (
     <div style={s.layout}>
+
+      {/* ══════════ TOAST ══════════ */}
+      {toast && (
+        <div className="animate-bounceIn" style={s.toastWrap}>
+          {toast.kind === "summary" ? (
+            <div style={s.toast} onClick={() => { setToast(null); setNotifOpen(true); }}>
+              <span style={s.toastText}>🔔 {toast.count} new notifications</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setToast(null); }}
+                style={s.toastClose}
+              >✕</button>
+            </div>
+          ) : (
+            <div style={s.toastCard} onClick={() => { setToast(null); setNotifOpen(true); }}>
+              {renderNotifCard(toast)}
+              <button
+                onClick={(e) => { e.stopPropagation(); setToast(null); }}
+                style={s.toastCardClose}
+              >✕</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ══════════ SIDEBAR ══════════ */}
       <aside style={s.sidebar}>
@@ -473,6 +696,9 @@ export default function CounselorDashboard() {
               <span>{item.label}</span>
               {item.key === "students" && high > 0 && (
                 <span style={s.navBadge}>{high}</span>
+              )}
+              {item.key === "chat" && totalUnread > 0 && (
+                <span style={s.navBadge}>{totalUnread > 99 ? "99+" : totalUnread}</span>
               )}
             </button>
           ))}
@@ -535,18 +761,15 @@ export default function CounselorDashboard() {
               </div>
               {tab === "students" && (
                 <div style={s.filterRow}>
-                  {["ALL","HIGH","MEDIUM","LOW"].map(f => (
+                  {["HIGH","MEDIUM","LOW","MISSED"].map(f => (
                     <button
                       key={f}
                       onClick={() => setSevFilter(f)}
                       style={{
                         ...s.filterBtn,
-                        background: sevFilter === f
-                          ? (f === "ALL" ? "#5B6BD8" : SEV_COLOR[f])
-                          : "#fff",
-                        color: sevFilter === f ? "#fff"
-                          : (f === "ALL" ? "#5B6BD8" : SEV_COLOR[f]),
-                        borderColor: f === "ALL" ? "#5B6BD8" : (SEV_COLOR[f] || "#5B6BD8"),
+                        background: sevFilter === f ? SEV_COLOR[f] : "#fff",
+                        color: sevFilter === f ? "#fff" : SEV_COLOR[f],
+                        borderColor: SEV_COLOR[f] || "#5B6BD8",
                       }}
                     >
                       {f}
@@ -595,13 +818,13 @@ export default function CounselorDashboard() {
 
               const findSlot = (day, slot) =>
                 apptList.find(a => {
-                  if (!a.scheduleDate) return false;
+                  if (!a.scheduleDate || a.status === "MISSED" || a.status === "CANCELLED") return false;
                   const d = new Date(a.scheduleDate);
                   return ovSameDay(d, day) && ovMatchSlot(d, slot);
                 });
 
               const weekAppts = apptList.filter(a => {
-                if (!a.scheduleDate) return false;
+                if (!a.scheduleDate || a.status === "MISSED" || a.status === "CANCELLED") return false;
                 const d = new Date(a.scheduleDate);
                 return ovDates.some(wd => ovSameDay(d, wd));
               });
@@ -875,7 +1098,7 @@ export default function CounselorDashboard() {
                                     <div style={s.studentCardName}>{student.name}</div>
                                     <div style={s.studentCardEmail}>
                                       {student.email}
-                                      {student.yearLevel && <span style={{ marginLeft:"6px", fontSize:"10px", fontWeight:700, color:"#7C6FCD", background:"rgba(124,111,205,0.1)", padding:"1px 6px", borderRadius:"99px" }}>{student.yearLevel} yr</span>}
+                                      {student.yearLevel && <span style={{ marginLeft:"6px", fontSize:"10px", fontWeight:700, color:"#7C6FCD", background:"rgba(124,111,205,0.1)", padding:"1px 6px", borderRadius:"99px" }}>{student.yearLevel}</span>}
                                       {student.score > 0 && <span style={{ marginLeft:"4px", fontSize:"10px", fontWeight:700, color: color, background:`${color}18`, padding:"1px 6px", borderRadius:"99px" }}>Score: {student.score}</span>}
                                     </div>
                                   </div>
@@ -884,13 +1107,15 @@ export default function CounselorDashboard() {
                                   {app ? (
                                     app.status === "DONE"
                                       ? <span style={s.stDone}>✓ Session done</span>
+                                      : app.status === "MISSED"
+                                      ? <span style={{ ...s.stPending, color:"#9CA3AF", background:"#F1F2F6" }}>⚠ Missed</span>
                                       : <span style={{ ...s.stPending, color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B", background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC" }}>{app.status}</span>
                                   ) : <span style={s.stNone}>No appointment</span>}
                                 </div>
                                 <div style={{ display:"flex", flexDirection:"column", gap:"6px", alignItems:"flex-end" }}>
                                   <div style={s.studentCardActions}>
                                     <button onClick={() => openChat(student)} style={s.btnChat}>💬 Chat</button>
-                                    {app && app.status !== "DONE" && (
+                                    {app && !["DONE", "CANCELLED", "MISSED"].includes(app.status) && (
                                       <button onClick={() => setConfirmCompleteId(confirmCompleteId === app._id ? null : app._id)} style={s.btnDone}>✓ Done</button>
                                     )}
                                   </div>
@@ -1053,8 +1278,7 @@ export default function CounselorDashboard() {
             </div>
 
             {/* Year Level Breakdown */}
-            {(analytics?.yearLevelBreakdown?.length > 0) && (
-              <div style={s.card}>
+            <div style={s.card}>
                 <div style={s.cardHeader}>
                   <div style={s.cardTitleRow}>
                     <span style={{ ...s.dot, background:"#38C9B8" }} />
@@ -1063,7 +1287,7 @@ export default function CounselorDashboard() {
                   <span style={s.cardSub}>Enrollment distribution</span>
                 </div>
                 <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
-                  {["1st","2nd","3rd","4th"].map(yr => {
+                  {["Grade 11","Grade 12","1st Year","2nd Year","3rd Year","4th Year"].map(yr => {
                     const entry = (analytics.yearLevelBreakdown || []).find(e => e._id === yr);
                     const count = entry?.count || 0;
                     const totalYr = (analytics.yearLevelBreakdown || []).reduce((s,e) => s + e.count, 0);
@@ -1071,7 +1295,7 @@ export default function CounselorDashboard() {
                     return (
                       <div key={yr} style={{ flex:"1 1 100px", background:"#F8F9FF", borderRadius:"14px", padding:"16px", textAlign:"center", border:"1.5px solid #E8EAF6" }}>
                         <div style={{ fontSize:"24px", fontWeight:"800", color:"#5B6BD8", fontFamily:"'Poppins',sans-serif" }}>{count}</div>
-                        <div style={{ fontSize:"13px", fontWeight:"700", color:"#2D3047", fontFamily:"'Poppins',sans-serif", marginTop:"4px" }}>{yr} Year</div>
+                        <div style={{ fontSize:"13px", fontWeight:"700", color:"#2D3047", fontFamily:"'Poppins',sans-serif", marginTop:"4px" }}>{yr}</div>
                         <div style={{ fontSize:"11px", color:"#A8AECB", fontFamily:"'Lato',sans-serif", marginTop:"2px" }}>{pct}%</div>
                         <div style={{ marginTop:"8px", height:"4px", background:"#E8EAF6", borderRadius:"9px" }}>
                           <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#38C9B8,#5B6BD8)", borderRadius:"9px" }} />
@@ -1081,34 +1305,71 @@ export default function CounselorDashboard() {
                   })}
                 </div>
               </div>
-            )}
 
-            {/* AI Recommendation */}
+            {/* Stress Levels by Year */}
             <div style={s.card}>
               <div style={s.cardHeader}>
                 <div style={s.cardTitleRow}>
-                  <span style={{ ...s.dot, background:"#7C6FCD" }} />
-                  <h2 style={s.cardTitle}>AI Recommendations</h2>
+                  <span style={{ ...s.dot, background:"#F87171" }} />
+                  <h2 style={s.cardTitle}>Stress Levels by Year</h2>
                 </div>
-                <button
-                  onClick={handleAiRecommendation}
-                  disabled={aiLoading}
-                  style={{ padding:"8px 18px", background:"linear-gradient(135deg,#5B6BD8,#7C6FCD)", color:"#fff", border:"none", borderRadius:"99px", fontSize:"13px", fontWeight:"600", cursor: aiLoading ? "not-allowed" : "pointer", fontFamily:"'Poppins',sans-serif", opacity: aiLoading ? 0.7 : 1 }}
-                >
-                  {aiLoading ? "Generating…" : "✨ Generate"}
-                </button>
+                <span style={s.cardSub}>Severity distribution per year level</span>
               </div>
-              {aiRec ? (
-                <div style={{ fontSize:"15px", lineHeight:"1.8", color:"#2D3047", fontFamily:"'Lato',sans-serif", whiteSpace:"pre-wrap" }}>
-                  {aiRec}
-                </div>
-              ) : (
-                <div style={s.emptyBox}>
-                  <span style={{ fontSize:"32px" }}>🤖</span>
-                  <p style={s.emptyText}>Click "Generate" to get AI-powered counseling recommendations based on the current data.</p>
-                </div>
-              )}
+              {(() => {
+                const YEARS = ["Grade 11","Grade 12","1st Year","2nd Year","3rd Year","4th Year"];
+                const rows = YEARS.map(yr => {
+                  const find = (sev) => (analytics?.severityByYear || [])
+                    .find(e => e._id.year === yr && e._id.severity === sev)?.count || 0;
+                  const high = find("HIGH"), medium = find("MEDIUM"), low = find("LOW");
+                  return { yr, high, medium, low, total: high + medium + low };
+                }).filter(r => r.total > 0);
+
+                if (rows.length === 0) {
+                  return (
+                    <div style={s.emptyBox}>
+                      <span style={{ fontSize:"32px" }}>📊</span>
+                      <p style={s.emptyText}>No assessment data yet to break down by year level.</p>
+                    </div>
+                  );
+                }
+
+                const mostStressed = rows.reduce((best, r) => (r.high > (best?.high || 0) ? r : best), null);
+
+                return (
+                  <>
+                    {mostStressed && mostStressed.high > 0 && (
+                      <div style={{ display:"flex", alignItems:"center", gap:"8px", background:"#FFF0EE", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:"12px", padding:"10px 14px", marginBottom:"18px" }}>
+                        <span style={{ fontSize:"16px" }}>⚠️</span>
+                        <span style={{ fontSize:"13px", fontWeight:600, color:"#F87171", fontFamily:"'Lato',sans-serif" }}>
+                          {mostStressed.yr} has the most high-risk students ({mostStressed.high})
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+                      {rows.map(r => (
+                        <div key={r.yr}>
+                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"6px" }}>
+                            <span style={{ fontSize:"13px", fontWeight:700, color:"#2D3047", fontFamily:"'Poppins',sans-serif" }}>{r.yr}</span>
+                            <span style={{ fontSize:"11px", color:"#A8AECB", fontFamily:"'Lato',sans-serif" }}>{r.total} assessed</span>
+                          </div>
+                          <div style={{ display:"flex", height:"10px", borderRadius:"6px", overflow:"hidden", background:"#E8EAF6" }}>
+                            {r.high   > 0 && <div style={{ width:`${r.high   / r.total * 100}%`, background:"#F87171" }} title={`${r.high} HIGH`} />}
+                            {r.medium > 0 && <div style={{ width:`${r.medium / r.total * 100}%`, background:"#F9A72B" }} title={`${r.medium} MEDIUM`} />}
+                            {r.low    > 0 && <div style={{ width:`${r.low    / r.total * 100}%`, background:"#38C9B8" }} title={`${r.low} LOW`} />}
+                          </div>
+                          <div style={{ display:"flex", gap:"14px", marginTop:"6px" }}>
+                            <span style={{ fontSize:"11px", color:"#F87171", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>🔴 {r.high} High</span>
+                            <span style={{ fontSize:"11px", color:"#F9A72B", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>🟡 {r.medium} Medium</span>
+                            <span style={{ fontSize:"11px", color:"#38C9B8", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>🟢 {r.low} Low</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
+
           </div>
         )}
 
@@ -1139,7 +1400,7 @@ export default function CounselorDashboard() {
 
           const findApptInSlot = (day, slot) =>
             apptList.find(a => {
-              if (!a.scheduleDate) return false;
+              if (!a.scheduleDate || a.status === "MISSED" || a.status === "CANCELLED") return false;
               const d = new Date(a.scheduleDate);
               return sameDay(d, day) && matchesSlot(d, slot);
             });
@@ -1250,7 +1511,7 @@ export default function CounselorDashboard() {
                   })}
                 </div>
 
-                {apptList.filter(a => a.scheduleDate).length === 0 && (
+                {apptList.filter(a => a.scheduleDate && a.status !== "MISSED" && a.status !== "CANCELLED").length === 0 && (
                   <div style={s.emptyBox}>
                     <span style={{ fontSize:"32px" }}>📅</span>
                     <p style={s.emptyText}>No appointments scheduled yet</p>
@@ -1273,6 +1534,12 @@ export default function CounselorDashboard() {
                         {rescheduleAppt.severity}
                       </span>
                     </div>
+                    <div style={s.modalInfoRow}>
+                      <span style={s.modalInfoLabel}>Session length</span>
+                      <span style={s.modalInfoValue}>
+                        {rescheduleAppt.durationMinutes || SESSION_MINUTES[rescheduleAppt.severity] || 30} min
+                      </span>
+                    </div>
                     {rescheduleAppt.scheduleDate && (
                       <div style={s.modalInfoRow}>
                         <span style={s.modalInfoLabel}>Current</span>
@@ -1293,7 +1560,9 @@ export default function CounselorDashboard() {
                     <div style={s.modalGroup}>
                       <label style={s.modalLabel}>Time Slot</label>
                       <select value={rescheduleTime} onChange={e => setRescheduleTime(e.target.value)} style={s.modalInput}>
-                        {SCHED_SLOTS.filter(sl => !sl.break).map(sl => (
+                        {SCHED_SLOTS.filter(sl => !sl.break && !(
+                          rescheduleAppt.severity !== "LOW" && (sl.value === "11:30" || sl.value === "15:30")
+                        )).map(sl => (
                           <option key={sl.value} value={sl.value}>{sl.label}</option>
                         ))}
                       </select>
@@ -1538,9 +1807,12 @@ export default function CounselorDashboard() {
             {/* ── Filter pills ── */}
             <div style={s.notifFilterBar}>
               {[
-                { key: "all",      label: "All"         },
-                { key: "upcoming", label: "⚡ Upcoming" },
-                { key: "done",     label: "✅ Done"     },
+                { key: "all",       label: "All"          },
+                { key: "messages",  label: "💬 Messages"  },
+                { key: "upcoming",  label: "⚡ Upcoming"  },
+                { key: "missed",    label: "⏰ Missed"    },
+                { key: "cancelled", label: "🚫 Cancelled" },
+                { key: "done",      label: "✅ Done"      },
               ].map(f => (
                 <button
                   key={f.key}
@@ -1557,25 +1829,34 @@ export default function CounselorDashboard() {
 
             <div style={s.notifList}>
               {(() => {
-                const getUrgency = n => {
-                  const now = new Date(), apptTime = new Date(n.appt.scheduleDate);
-                  const diffMin = Math.round((apptTime - now) / 60000);
-                  const sameDay = apptTime.toDateString() === now.toDateString();
-                  if (n.appt.status === "DONE")              return "done";
-                  if (n.appt.status === "ONGOING")           return "ongoing";
-                  if (diffMin < 0 && sameDay)                return "overdue";
-                  if (diffMin >= 0 && diffMin <= 15)         return "now";
-                  if (diffMin > 15 && diffMin <= 60)         return "soon";
-                  return "scheduled";
-                };
-
-                const filtered = notifs.filter(n => {
-                  if (notifFilter === "all")      return true;
-                  if (notifFilter === "new")      return n.type === "new";
-                  if (notifFilter === "upcoming") return n.type === "soon" || n.type === "now";
-                  if (notifFilter === "done")     return n.type === "done" || n.type === "ongoing";
-                  return true;
-                });
+                let filtered;
+                if (notifFilter === "upcoming" || notifFilter === "done") {
+                  // Live view computed straight from current appointment state —
+                  // the event log only records one-time status *changes*, so an
+                  // appointment that was booked days out would never show up here
+                  // just because it happened to still be a plain status change.
+                  const now = new Date();
+                  filtered = apptList
+                    .filter(a => a.scheduleDate && !["CANCELLED", "MISSED"].includes(a.status))
+                    .map(a => ({
+                      id: `live_${a._id}`,
+                      appt: a,
+                      name: typeof a.studentId === "object" ? (a.studentId.name || "Student") : "Student",
+                      addedAt: now,
+                    }))
+                    .filter(n => notifFilter === "upcoming"
+                      ? n.appt.status === "PENDING"
+                      : ["DONE", "ONGOING"].includes(n.appt.status))
+                    .sort((a, b) => new Date(a.appt.scheduleDate) - new Date(b.appt.scheduleDate));
+                } else {
+                  filtered = notifs.filter(n => {
+                    if (notifFilter === "all")       return true;
+                    if (notifFilter === "messages")  return n.kind === "chat";
+                    if (notifFilter === "missed")    return n.kind === "missed";
+                    if (notifFilter === "cancelled") return n.kind === "cancelled";
+                    return true;
+                  });
+                }
 
                 if (filtered.length === 0) return (
                   <div style={s.notifEmpty}>
@@ -1584,75 +1865,7 @@ export default function CounselorDashboard() {
                   </div>
                 );
 
-                return filtered.map(n => {
-                // Compute live urgency from current time
-                const now      = new Date();
-                const apptTime = new Date(n.appt.scheduleDate);
-                const diffMin  = Math.round((apptTime - now) / 60000);
-                const sameDay  = apptTime.toDateString() === now.toDateString();
-
-                const urgency = n.type === "done"    ? "done"
-                  : n.type === "ongoing"             ? "ongoing"
-                  : n.appt.status === "DONE"         ? "done"
-                  : n.appt.status === "ONGOING"      ? "ongoing"
-                  : diffMin < 0 && sameDay           ? "overdue"
-                  : diffMin >= 0 && diffMin <= 15    ? "now"
-                  : diffMin > 15 && diffMin <= 60    ? "soon"
-                  : "scheduled";
-
-                const meta = {
-                  done:      { color: "#38C9B8", bg: "#E6FAF7", icon: "✅", label: "Session done" },
-                  ongoing:   { color: "#5B6BD8", bg: "#EEF0FD", icon: "🔄", label: "Session ongoing" },
-                  overdue:   { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: `Overdue ${Math.abs(diffMin)}m ago` },
-                  now:       { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: diffMin <= 0 ? "Starting NOW" : `In ${diffMin} min` },
-                  soon:      { color: "#F9A72B", bg: "#FFF8EC", icon: "⚡", label: `In ${diffMin} min` },
-                  scheduled: { color: "#5B6BD8", bg: "#EEF0FD", icon: "📅", label: apptTime.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) },
-                }[urgency];
-
-                // Relative time since the notification was added
-                const secAgo = Math.floor((now - new Date(n.addedAt)) / 1000);
-                const relAge = secAgo < 60 ? "just now"
-                  : secAgo < 3600 ? `${Math.floor(secAgo / 60)}m ago`
-                  : secAgo < 86400 ? `${Math.floor(secAgo / 3600)}h ago`
-                  : new Date(n.addedAt).toLocaleDateString();
-
-                return (
-                  <div key={n.id} style={{ ...s.notifItem, borderLeft: `4px solid ${meta.color}` }}>
-                    <div style={s.notifItemTop}>
-                      <span style={s.notifItemName}>{n.name}</span>
-                      <span style={{ ...s.notifItemTag, background: meta.bg, color: meta.color }}>
-                        {meta.icon} {meta.label}
-                      </span>
-                    </div>
-                    <div style={s.notifItemMeta}>
-                      <span style={{ ...s.notifItemSev, color: SEV_COLOR[n.appt.severity] }}>
-                        {n.appt.severity}
-                      </span>
-                      <span style={s.notifItemTime}>{relAge}</span>
-                    </div>
-                    <div style={s.notifItemActions}>
-                      <button
-                        onClick={() => { setNotifOpen(false); setTab("schedule"); }}
-                        style={s.notifActionBtn}
-                      >
-                        View Schedule →
-                      </button>
-                      <button
-                        onClick={() => {
-                          const st = students.find(s => String(s._id) === String(
-                            typeof n.appt.studentId === "object" ? n.appt.studentId._id : n.appt.studentId
-                          ));
-                          if (st) openChat(st);
-                          setNotifOpen(false);
-                        }}
-                        style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}
-                      >
-                        💬 Chat
-                      </button>
-                    </div>
-                  </div>
-                );
-                }); // end filtered.map
+                return filtered.map(renderNotifCard);
               })(/* end IIFE */)}
             </div>
           </div>
@@ -1683,6 +1896,60 @@ const s = {
     fontFamily: "'Lato',sans-serif",
     background: "#F0F2F8",
     overflow: "hidden",
+  },
+  toastWrap: {
+    position: "fixed",
+    top: "20px",
+    right: "20px",
+    zIndex: 2000,
+    width: "340px",
+  },
+  toast: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    background: "#2D3047",
+    color: "#fff",
+    padding: "14px 16px",
+    borderRadius: "14px",
+    boxShadow: "0 12px 32px rgba(0,0,0,0.28)",
+    cursor: "pointer",
+  },
+  toastText: {
+    fontSize: "13px",
+    fontWeight: 600,
+    fontFamily: "'Poppins',sans-serif",
+    lineHeight: 1.4,
+  },
+  toastClose: {
+    background: "rgba(255,255,255,0.12)",
+    border: "none",
+    color: "#fff",
+    width: "22px",
+    height: "22px",
+    borderRadius: "50%",
+    fontSize: "11px",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  toastCard: {
+    position: "relative",
+    cursor: "pointer",
+    boxShadow: "0 12px 32px rgba(0,0,0,0.28)",
+    borderRadius: "12px",
+  },
+  toastCardClose: {
+    position: "absolute",
+    top: "8px",
+    right: "8px",
+    background: "rgba(45,48,71,0.08)",
+    border: "none",
+    color: "#7B7F9E",
+    width: "20px",
+    height: "20px",
+    borderRadius: "50%",
+    fontSize: "10px",
+    cursor: "pointer",
   },
   loadingScreen: {
     display: "flex", flexDirection: "column", alignItems: "center",

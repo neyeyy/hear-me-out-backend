@@ -5,7 +5,11 @@ const userSchema = new mongoose.Schema({
   email:     { type: String, required: true, unique: true },
   password:  { type: String, required: true },
   role:      { type: String, enum: ['student', 'counselor'], default: 'student' },
-  yearLevel: { type: String, enum: ['1st', '2nd', '3rd', '4th'], default: null },
+  yearLevel: {
+    type: String,
+    enum: ['Grade 11', 'Grade 12', '1st Year', '2nd Year', '3rd Year', '4th Year'],
+    default: null
+  },
   resetToken:       { type: String, default: null },
   resetTokenExpiry: { type: Date,   default: null },
 }, { timestamps: true });
