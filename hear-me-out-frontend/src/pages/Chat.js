@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import API from "../services/api";
 
-const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend-production.up.railway.app", {
+const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend-production-8100.up.railway.app", {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionAttempts: Infinity,

@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io } from "socket.io-client";
 import API from "../services/api";
 
-const socket = io("https://hear-me-out-backend-production.up.railway.app");
+const socket = io("https://hear-me-out-backend-production-8100.up.railway.app");
 
 export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");

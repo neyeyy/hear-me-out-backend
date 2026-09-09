@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 import logo from "../logo.png";
 
-const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend-production.up.railway.app", {
+const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend-production-8100.up.railway.app", {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionAttempts: Infinity,
@@ -134,10 +134,18 @@ export default function CounselorDashboard() {
       const res = await API.get("/appointments");
       const list = res.data.appointments || [];
       setApptList(list);
+      // Keep each student's MOST RECENT appointment — the list here is sorted by
+      // severity/date for display, not recency, so naively taking "last in array"
+      // per student can surface a stale record (e.g. an old CANCELLED one) instead
+      // of their actual current one (e.g. a newer MISSED appointment).
       const map = {};
       list.forEach(app => {
+        if (!app.studentId) return; // orphaned reference (student account no longer exists)
         const sid = typeof app.studentId === "object" ? app.studentId._id : app.studentId;
-        map[sid] = app;
+        const existing = map[sid];
+        if (!existing || new Date(app.createdAt) > new Date(existing.createdAt)) {
+          map[sid] = app;
+        }
       });
       setAppointments(map);
     } catch (e) { console.log(e); }
@@ -163,7 +171,7 @@ export default function CounselorDashboard() {
     const incoming = [];
 
     apptList.forEach(a => {
-      if (!a.scheduleDate) return;
+      if (!a.scheduleDate || !a.studentId) return; // skip orphaned refs (deleted student)
       // Key = id + status so a status change (e.g. PENDING→ONGOING) re-notifies
       const key = `${a._id}_${a.status}`;
       if (notifSeenRef.current.has(key)) return;
@@ -494,7 +502,7 @@ export default function CounselorDashboard() {
 
     const goToChat = (e) => {
       e?.stopPropagation(); // don't let the toast wrapper's click reopen the panel
-      const sid = n.roomId || (typeof n.appt?.studentId === "object" ? n.appt.studentId._id : n.appt?.studentId);
+      const sid = n.roomId || (n.appt?.studentId && typeof n.appt.studentId === "object" ? n.appt.studentId._id : n.appt?.studentId);
       const st = students.find(st => String(st._id) === String(sid));
       if (st) openChat(st);
       else if (n.roomId) { setChatRoom(n.roomId); setTab("chat"); }
@@ -889,7 +897,7 @@ export default function CounselorDashboard() {
                             <div style={s.ovTimeCol}>{slot.label}</div>
                             {ovDates.map((d, di) => {
                               const appt = findSlot(d, slot);
-                              const sn   = appt && typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "";
+                              const sn   = appt?.studentId && typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "";
                               return (
                                 <div key={di} style={{ ...s.ovSlot, background: isToday(d) ? "rgba(91,107,216,0.02)" : undefined }}>
                                   {appt && (
@@ -1043,6 +1051,7 @@ export default function CounselorDashboard() {
                 { label:"High Risk",     value: high,                                                                color:"#F87171", bg:"#FFF0EE" },
                 { label:"Medium Risk",   value: medium,                                                              color:"#F9A72B", bg:"#FFF8EC" },
                 { label:"Low Risk",      value: low,                                                                 color:"#38C9B8", bg:"#E6FAF7" },
+                { label:"Missed",        value: students.filter(s => appointments[s._id]?.status === "MISSED").length, color:"#9CA3AF", bg:"#F1F2F6" },
                 { label:"Unresolved",    value: students.filter(s => !appointments[s._id] || appointments[s._id].status !== "DONE").length, color:"#7C6FCD", bg:"#F3F0FF" },
               ].map(c => (
                 <div key={c.label} style={{ display:"flex", alignItems:"center", gap:"7px", padding:"7px 14px", background:c.bg, borderRadius:"99px" }}>
@@ -1406,7 +1415,7 @@ export default function CounselorDashboard() {
             });
 
           const isToday = (d) => d.toDateString() === new Date().toDateString();
-          const studentName = (appt) => typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "Student";
+          const studentName = (appt) => appt.studentId && typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "Student";
 
           // How urgent is an appointment chip
           const chipUrgency = (appt) => {
@@ -1837,7 +1846,7 @@ export default function CounselorDashboard() {
                   // just because it happened to still be a plain status change.
                   const now = new Date();
                   filtered = apptList
-                    .filter(a => a.scheduleDate && !["CANCELLED", "MISSED"].includes(a.status))
+                    .filter(a => a.scheduleDate && a.studentId && !["CANCELLED", "MISSED"].includes(a.status))
                     .map(a => ({
                       id: `live_${a._id}`,
                       appt: a,

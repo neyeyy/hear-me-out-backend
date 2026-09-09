@@ -24,3 +24,4 @@ yarn-error.log*
 
 # Vercel project link (local machine-specific)
 .vercel
+.env*
