@@ -97,6 +97,15 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [requestMsg, setRequestMsg] = useState({ text:"", ok:false });
   const [requesting, setRequesting] = useState(false);
 
+  // schedule modal (calendar + time slots)
+  const [schedModalOpen, setSchedModalOpen] = useState(false);
+  const [schedDate,      setSchedDate]      = useState("");
+  const [schedMonth,     setSchedMonth]     = useState(new Date());
+  const [schedSlots,     setSchedSlots]     = useState([]);
+  const [schedTime,      setSchedTime]      = useState("");
+  const [schedLoading,   setSchedLoading]   = useState(false);
+  const [schedErr,       setSchedErr]       = useState("");
+
   // refs
   const prevApptRef   = useRef(null);
   const prevUnreadRef = useRef(0);
@@ -188,21 +197,73 @@ export default function StudentDashboardScreen({ navigation, route }) {
     } catch (e) { /* silent */ }
   };
 
-  /* ─── request an appointment ── */
-  const handleRequestAppointment = async () => {
-    setRequesting(true);
-    setRequestMsg({ text:"", ok:false });
+  /* ─── calendar-based appointment booking ── */
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const startOfToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+
+  const isSelectableDay = (d) => {
+    const dow = d.getDay();
+    return dow !== 0 && dow !== 6 && d >= startOfToday();
+  };
+
+  const getMonthGrid = (monthDate) => {
+    const year = monthDate.getFullYear(), month = monthDate.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = Array(firstDow).fill(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+    return cells;
+  };
+
+  const goToMonth = (offset) => {
+    setSchedMonth(m => new Date(m.getFullYear(), m.getMonth() + offset, 1));
+  };
+
+  const fetchSlotsForDate = async (dateStr) => {
+    setSchedLoading(true);
+    setSchedTime("");
     try {
-      const res = await API.post("/appointments");
+      const res = await API.get(`/appointments/available-slots?date=${dateStr}`);
+      setSchedSlots(res.data.success ? (res.data.slots || []) : []);
+    } catch (e) {
+      setSchedSlots([]);
+    } finally {
+      setSchedLoading(false);
+    }
+  };
+
+  const openScheduleModal = () => {
+    let d = startOfToday();
+    while (!isSelectableDay(d)) d = new Date(d.getTime() + 86400000);
+    const firstDay = toDateStr(d);
+    setRequestMsg({ text:"", ok:false });
+    setSchedErr("");
+    setSchedMonth(d);
+    setSchedDate(firstDay);
+    setSchedModalOpen(true);
+    fetchSlotsForDate(firstDay);
+  };
+
+  const handleConfirmSchedule = async () => {
+    if (!schedDate || !schedTime) return;
+    setRequesting(true);
+    setSchedErr("");
+    try {
+      const dt = new Date(`${schedDate}T${schedTime}:00`);
+      const res = await API.post("/appointments", { scheduleDate: dt });
       if (res.data.success) {
+        setSchedModalOpen(false);
         setRequestMsg({ text:"Appointment scheduled!", ok:true });
         fetchAppointment();
         fetchHistory();
       } else {
-        setRequestMsg({ text: res.data.message || "Could not schedule an appointment.", ok:false });
+        setSchedErr(res.data.message || "Could not schedule that slot.");
+        fetchSlotsForDate(schedDate);
       }
     } catch (e) {
-      setRequestMsg({ text: e.response?.data?.message || "Error scheduling appointment.", ok:false });
+      setSchedErr(e.response?.data?.message || "Error scheduling appointment.");
     } finally {
       setRequesting(false);
     }
@@ -423,13 +484,10 @@ export default function StudentDashboardScreen({ navigation, route }) {
                     <Text style={s.noApptText}>No appointment scheduled yet</Text>
                     <Text style={s.noApptSub}>Complete your mood check-in to get started</Text>
                     <TouchableOpacity
-                      onPress={handleRequestAppointment}
-                      disabled={requesting}
-                      style={[s.requestApptBtn, requesting && { opacity: 0.7 }]}
+                      onPress={openScheduleModal}
+                      style={s.requestApptBtn}
                     >
-                      <Text style={s.requestApptBtnText}>
-                        {requesting ? "Scheduling…" : "📅 Schedule an Appointment"}
-                      </Text>
+                      <Text style={s.requestApptBtnText}>📅 Schedule an Appointment</Text>
                     </TouchableOpacity>
                     {!!requestMsg.text && (
                       <Text style={{ color: requestMsg.ok ? "#4ECDC4" : "#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginTop:8 }}>
@@ -529,6 +587,127 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 ))}
               </ScrollView>
             )}
+          </View>
+        </Modal>
+
+        {/* Schedule Appointment Modal */}
+        <Modal
+          visible={schedModalOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSchedModalOpen(false)}
+        >
+          <TouchableOpacity
+            style={s.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setSchedModalOpen(false)}
+          />
+          <View style={s.schedSheet}>
+            <View style={s.sheetHandle} />
+            <View style={s.sheetHeader}>
+              <Text style={s.sheetTitle}>Schedule Your Appointment</Text>
+              <TouchableOpacity onPress={() => setSchedModalOpen(false)} style={s.schedCloseBtn}>
+                <Text style={{ color:"#fff", fontSize:13 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={s.schedSub}>Pick a date and an open time slot below.</Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
+              {/* Month nav */}
+              <View style={s.calNavRow}>
+                <TouchableOpacity
+                  onPress={() => goToMonth(-1)}
+                  disabled={schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()}
+                  style={[s.calNavBtn, (schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()) && { opacity: 0.3 }]}
+                >
+                  <Text style={{ color:"#fff", fontSize:16 }}>‹</Text>
+                </TouchableOpacity>
+                <Text style={s.calNavLabel}>
+                  {schedMonth.toLocaleDateString("en-US", { month:"long", year:"numeric" })}
+                </Text>
+                <TouchableOpacity onPress={() => goToMonth(1)} style={s.calNavBtn}>
+                  <Text style={{ color:"#fff", fontSize:16 }}>›</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Weekday row */}
+              <View style={s.calWeekRow}>
+                {["S","M","T","W","T","F","S"].map((d, i) => (
+                  <Text key={i} style={s.calWeekDay}>{d}</Text>
+                ))}
+              </View>
+
+              {/* Day grid */}
+              <View style={s.calGrid}>
+                {getMonthGrid(schedMonth).map((d, i) => {
+                  if (!d) return <View key={i} style={s.calDayCell} />;
+                  const dStr = toDateStr(d);
+                  const isSel = dStr === schedDate;
+                  const isToday = dStr === toDateStr(startOfToday());
+                  const selectable = isSelectableDay(d);
+                  return (
+                    <View key={i} style={s.calDayCell}>
+                      <TouchableOpacity
+                        disabled={!selectable}
+                        onPress={() => { setSchedDate(dStr); fetchSlotsForDate(dStr); }}
+                        style={[
+                          s.calDay,
+                          isSel && s.calDayActive,
+                          !selectable && s.calDayDisabled,
+                          isToday && !isSel && s.calDayToday,
+                        ]}
+                      >
+                        <Text style={[s.calDayText, !selectable && { color:"rgba(255,255,255,0.15)" }]}>
+                          {d.getDate()}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Time slots */}
+              <Text style={s.schedSectionLabel}>AVAILABLE TIMES</Text>
+              {schedLoading ? (
+                <View style={{ paddingVertical:24, alignItems:"center" }}>
+                  <ActivityIndicator color="#6C63FF" />
+                </View>
+              ) : schedSlots.every(sl => !sl.available) ? (
+                <Text style={s.schedEmptyText}>No open slots this day — try another date.</Text>
+              ) : (
+                <View style={s.slotGrid}>
+                  {schedSlots.map(sl => (
+                    <TouchableOpacity
+                      key={sl.value}
+                      disabled={!sl.available}
+                      onPress={() => setSchedTime(sl.value)}
+                      style={[
+                        s.slotBtn,
+                        schedTime === sl.value && s.slotBtnActive,
+                        !sl.available && s.slotBtnDisabled,
+                      ]}
+                    >
+                      <Text style={[
+                        s.slotBtnText,
+                        !sl.available && s.slotBtnTextDisabled,
+                      ]}>{sl.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {!!schedErr && <Text style={s.schedErrText}>{schedErr}</Text>}
+
+              <TouchableOpacity
+                onPress={handleConfirmSchedule}
+                disabled={!schedTime || requesting}
+                style={[s.schedConfirmBtn, (!schedTime || requesting) && { opacity: 0.5 }]}
+              >
+                <Text style={s.schedConfirmBtnText}>
+                  {requesting ? "Scheduling…" : "Confirm Appointment"}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </Modal>
       </View>
@@ -903,6 +1082,75 @@ const s = StyleSheet.create({
   },
   sheetTitle: { fontSize:16, fontWeight:"800", color:"#fff" },
   sheetClear: { fontSize:12, color:"rgba(255,255,255,0.4)", fontWeight:"600" },
+
+  /* ── Schedule Appointment modal ── */
+  schedSheet: {
+    backgroundColor:"#181830",
+    borderTopLeftRadius:28, borderTopRightRadius:28,
+    paddingBottom:Platform.OS === "ios" ? 34 : 20,
+    paddingHorizontal:20,
+    paddingTop:12,
+    maxHeight:"88%",
+    borderWidth:1, borderColor:"rgba(255,255,255,0.08)",
+  },
+  schedCloseBtn: {
+    width:26, height:26, borderRadius:13,
+    backgroundColor:"rgba(255,255,255,0.1)",
+    alignItems:"center", justifyContent:"center",
+  },
+  schedSub: { fontSize:13, color:"rgba(255,255,255,0.45)", marginBottom:16 },
+  calNavRow: {
+    flexDirection:"row", alignItems:"center", justifyContent:"space-between",
+    marginBottom:14,
+  },
+  calNavBtn: {
+    width:30, height:30, borderRadius:15,
+    backgroundColor:"rgba(255,255,255,0.08)",
+    alignItems:"center", justifyContent:"center",
+  },
+  calNavLabel: { fontSize:14, fontWeight:"700", color:"#fff" },
+  calWeekRow: { flexDirection:"row", marginBottom:4 },
+  calWeekDay: {
+    width:`${100/7}%`, textAlign:"center",
+    fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.35)",
+  },
+  calGrid: { flexDirection:"row", flexWrap:"wrap", marginBottom:18 },
+  calDayCell: { width:`${100/7}%`, aspectRatio:1, padding:2 },
+  calDay: {
+    flex:1, borderRadius:10, alignItems:"center", justifyContent:"center",
+    backgroundColor:"rgba(255,255,255,0.04)",
+  },
+  calDayText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  calDayToday: { borderWidth:1.5, borderColor:"rgba(108,99,255,0.6)" },
+  calDayActive: { backgroundColor:"#6C63FF" },
+  calDayDisabled: { backgroundColor:"transparent" },
+  schedSectionLabel: {
+    fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.4)",
+    letterSpacing:1, marginBottom:10,
+  },
+  schedEmptyText: {
+    fontSize:13, color:"rgba(255,255,255,0.4)", textAlign:"center",
+    paddingVertical:20,
+  },
+  slotGrid: { flexDirection:"row", flexWrap:"wrap", gap:8, marginBottom:8 },
+  slotBtn: {
+    width:"31%", paddingVertical:10, borderRadius:10,
+    backgroundColor:"rgba(255,255,255,0.05)",
+    alignItems:"center",
+  },
+  slotBtnActive: { backgroundColor:"#6C63FF" },
+  slotBtnDisabled: { backgroundColor:"rgba(255,255,255,0.02)" },
+  slotBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  slotBtnTextDisabled: { color:"rgba(255,255,255,0.2)", textDecorationLine:"line-through" },
+  schedErrText: {
+    fontSize:13, fontWeight:"600", color:"#F87171",
+    textAlign:"center", marginTop:12,
+  },
+  schedConfirmBtn: {
+    marginTop:20, paddingVertical:14, borderRadius:12,
+    backgroundColor:"#6C63FF", alignItems:"center",
+  },
+  schedConfirmBtnText: { fontSize:15, fontWeight:"700", color:"#fff" },
   notifEmpty: { alignItems:"center", paddingVertical:32 },
   notifEmptyText: { fontSize:14, color:"rgba(255,255,255,0.35)", fontWeight:"600" },
   notifItem: {
