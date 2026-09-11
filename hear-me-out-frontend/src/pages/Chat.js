@@ -41,10 +41,10 @@ function Chat() {
     if (msg.senderId !== "system") return null;
     const text = msg.message || "";
     if (text.startsWith("You missed your schedule")) {
-      return { endpoint: "/appointments", label: "📅 Reschedule Appointment" };
+      return { type: "missed", label: "📅 Reschedule Appointment" };
     }
     if (text.startsWith("Hello, we have a vacant schedule today")) {
-      return { endpoint: "/appointments/accept-vacancy", label: "✅ Yes, move me to today" };
+      return { type: "vacancy", endpoint: "/appointments/accept-vacancy", label: "✅ Yes, move me to today" };
     }
     return null;
   };
@@ -65,6 +65,80 @@ function Chat() {
       setRescheduledIds(prev => new Set(prev).add(msg._id));
     } catch (e) {
       console.log("System action error:", e);
+    } finally {
+      setReschedulingId(null);
+    }
+  };
+
+  // ── Calendar-based reschedule (opened from the "missed schedule" notice) ──
+  const [schedModalOpen, setSchedModalOpen] = useState(false);
+  const [schedTargetMsg, setSchedTargetMsg] = useState(null);
+  const [schedDate,      setSchedDate]      = useState("");
+  const [schedMonth,     setSchedMonth]     = useState(new Date());
+  const [schedSlots,     setSchedSlots]     = useState([]);
+  const [schedTime,      setSchedTime]      = useState("");
+  const [schedLoading,   setSchedLoading]   = useState(false);
+  const [schedErr,       setSchedErr]       = useState("");
+
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const startOfToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+  const isSelectableDay = (d) => { const dow = d.getDay(); return dow !== 0 && dow !== 6 && d >= startOfToday(); };
+  const getMonthGrid = (monthDate) => {
+    const year = monthDate.getFullYear(), month = monthDate.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = Array(firstDow).fill(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+    return cells;
+  };
+  const goToMonth = (offset) => setSchedMonth(m => new Date(m.getFullYear(), m.getMonth() + offset, 1));
+
+  const fetchSlotsForDate = async (dateStr) => {
+    setSchedLoading(true);
+    setSchedTime("");
+    try {
+      const res = await API.get(`/appointments/available-slots?date=${dateStr}`);
+      setSchedSlots(res.data.success ? (res.data.slots || []) : []);
+    } catch (e) {
+      setSchedSlots([]);
+    } finally {
+      setSchedLoading(false);
+    }
+  };
+
+  const openScheduleModal = (msg) => {
+    let d = startOfToday();
+    while (!isSelectableDay(d)) d = new Date(d.getTime() + 86400000);
+    const firstDay = toDateStr(d);
+    setSchedTargetMsg(msg);
+    setSchedErr("");
+    setSchedMonth(d);
+    setSchedDate(firstDay);
+    setSchedModalOpen(true);
+    fetchSlotsForDate(firstDay);
+  };
+
+  const handleConfirmSchedule = async () => {
+    if (!schedDate || !schedTime) return;
+    setReschedulingId(schedTargetMsg?._id);
+    setSchedErr("");
+    try {
+      const dt = new Date(`${schedDate}T${schedTime}:00`);
+      const res = await API.post("/appointments", { scheduleDate: dt });
+      if (res.data.success) {
+        const confirmText = res.data.appointment?.scheduleDate
+          ? `✅ New appointment scheduled: ${new Date(res.data.appointment.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`
+          : "✅ Appointment scheduled!";
+        socket.emit("sendMessage", { roomId: String(activeRoom), senderId: String(userId), message: confirmText });
+        if (schedTargetMsg) setRescheduledIds(prev => new Set(prev).add(schedTargetMsg._id));
+        setSchedModalOpen(false);
+      } else {
+        setSchedErr(res.data.message || "Could not schedule that slot.");
+        fetchSlotsForDate(schedDate);
+      }
+    } catch (e) {
+      setSchedErr(e.response?.data?.message || "Error scheduling appointment.");
     } finally {
       setReschedulingId(null);
     }
@@ -262,7 +336,7 @@ function Chat() {
             </div>
             {showAction && (
               <button
-                onClick={() => handleSystemAction(msg, action.endpoint)}
+                onClick={() => action.type === "missed" ? openScheduleModal(msg) : handleSystemAction(msg, action.endpoint)}
                 disabled={reschedulingId === msg._id}
                 style={{ ...s.rescheduleBtn, marginLeft: "36px", opacity: reschedulingId === msg._id ? 0.6 : 1 }}
               >
@@ -341,6 +415,104 @@ function Chat() {
           <MessageList />
           <InputBar />
         </div>
+
+        {/* ── Schedule Appointment modal (opened from "missed schedule" notice) ── */}
+        {schedModalOpen && (
+          <div style={s.modalOverlay} onClick={() => setSchedModalOpen(false)}>
+            <div style={s.modalCard} onClick={e => e.stopPropagation()}>
+              <div style={s.modalHeader}>
+                <h3 style={s.modalTitle}>Schedule Your Appointment</h3>
+                <button onClick={() => setSchedModalOpen(false)} style={s.modalCloseBtn}>✕</button>
+              </div>
+              <p style={s.modalSub}>Pick a date and an open time slot below.</p>
+
+              <div style={s.calNavRow}>
+                <button
+                  onClick={() => goToMonth(-1)}
+                  disabled={schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()}
+                  style={{ ...s.calNavBtn, opacity: (schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()) ? 0.3 : 1 }}
+                >‹</button>
+                <span style={s.calNavLabel}>
+                  {schedMonth.toLocaleDateString("en-US", { month:"long", year:"numeric" })}
+                </span>
+                <button onClick={() => goToMonth(1)} style={s.calNavBtn}>›</button>
+              </div>
+
+              <div style={s.calWeekRow}>
+                {["S","M","T","W","T","F","S"].map((d,i) => (
+                  <span key={i} style={s.calWeekDay}>{d}</span>
+                ))}
+              </div>
+
+              <div style={s.calGrid}>
+                {getMonthGrid(schedMonth).map((d, i) => {
+                  if (!d) return <span key={i} />;
+                  const dStr = toDateStr(d);
+                  const isSel = dStr === schedDate;
+                  const isToday = dStr === toDateStr(startOfToday());
+                  const selectable = isSelectableDay(d);
+                  return (
+                    <button
+                      key={i}
+                      disabled={!selectable}
+                      onClick={() => { setSchedDate(dStr); fetchSlotsForDate(dStr); }}
+                      style={{
+                        ...s.calDay,
+                        ...(isSel ? s.calDayActive : {}),
+                        ...(!selectable ? s.calDayDisabled : {}),
+                        ...(isToday && !isSel ? s.calDayToday : {}),
+                      }}
+                    >
+                      {d.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p style={s.schedSectionLabel}>AVAILABLE TIMES</p>
+              {schedLoading ? (
+                <div style={{ padding:"30px 0", textAlign:"center", color:"rgba(45,48,71,0.4)", fontSize:"13px" }}>
+                  Loading slots…
+                </div>
+              ) : schedSlots.every(sl => !sl.available) ? (
+                <div style={{ padding:"20px 0", textAlign:"center", color:"rgba(45,48,71,0.4)", fontSize:"13px" }}>
+                  No open slots this day — try another date.
+                </div>
+              ) : (
+                <div style={s.slotGrid}>
+                  {schedSlots.map(sl => (
+                    <button
+                      key={sl.value}
+                      disabled={!sl.available}
+                      onClick={() => setSchedTime(sl.value)}
+                      style={{
+                        ...s.slotBtn,
+                        ...(schedTime === sl.value ? s.slotBtnActive : {}),
+                        ...(!sl.available ? s.slotBtnDisabled : {}),
+                      }}
+                    >
+                      {sl.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {schedErr && (
+                <div style={{ fontSize:"13px", fontWeight:600, textAlign:"center", color:"#F87171", marginTop:"12px" }}>
+                  {schedErr}
+                </div>
+              )}
+
+              <button
+                onClick={handleConfirmSchedule}
+                disabled={!schedTime || reschedulingId === schedTargetMsg?._id}
+                style={{ ...s.modalConfirmBtn, opacity: (!schedTime || reschedulingId === schedTargetMsg?._id) ? 0.5 : 1 }}
+              >
+                {reschedulingId === schedTargetMsg?._id ? "Scheduling…" : "Confirm Appointment"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -836,6 +1008,66 @@ const s = {
     fontFamily:   "'Poppins',sans-serif",
     cursor:       "pointer",
     boxShadow:    "0 4px 12px rgba(91,107,216,0.3)",
+  },
+
+  /* ── Schedule Appointment modal ── */
+  modalOverlay: {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 999, padding: "20px",
+  },
+  modalCard: {
+    width: "100%", maxWidth: "400px", maxHeight: "86vh", overflowY: "auto",
+    background: "#fff", borderRadius: "20px", padding: "22px",
+    boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
+  },
+  modalHeader: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    marginBottom: "4px",
+  },
+  modalTitle: {
+    fontSize: "17px", fontWeight: 800, color: "#2D3047", margin: 0,
+    fontFamily: "'Poppins',sans-serif",
+  },
+  modalCloseBtn: {
+    background: "#F3F4F8", border: "none", color: "#2D3047",
+    width: "26px", height: "26px", borderRadius: "50%", cursor: "pointer",
+    fontSize: "12px", flexShrink: 0,
+  },
+  modalSub: { fontSize: "13px", color: "#7B7F9E", margin: "0 0 16px" },
+  calNavRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    marginBottom: "12px",
+  },
+  calNavBtn: {
+    width: "28px", height: "28px", borderRadius: "50%", flexShrink: 0,
+    background: "#F3F4F8", border: "none", color: "#2D3047",
+    fontSize: "15px", cursor: "pointer",
+  },
+  calNavLabel: { fontSize: "13px", fontWeight: 700, color: "#2D3047", fontFamily: "'Poppins',sans-serif" },
+  calWeekRow: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: "4px" },
+  calWeekDay: { textAlign: "center", fontSize: "10px", fontWeight: 700, color: "#A8AECB" },
+  calGrid: { display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px", marginBottom: "16px" },
+  calDay: {
+    aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center",
+    borderRadius: "8px", background: "#F8F9FF", border: "none",
+    color: "#2D3047", fontSize: "12px", fontWeight: 600, cursor: "pointer",
+  },
+  calDayToday: { border: "1.5px solid #5B6BD8" },
+  calDayActive: { background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)", color: "#fff", fontWeight: 800 },
+  calDayDisabled: { color: "#D1D5F0", cursor: "not-allowed", background: "transparent" },
+  schedSectionLabel: { fontSize: "10px", fontWeight: 700, color: "#A8AECB", letterSpacing: "0.06em", margin: "0 0 8px" },
+  slotGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" },
+  slotBtn: {
+    padding: "8px 4px", borderRadius: "8px", fontSize: "11px", fontWeight: 600,
+    background: "#F8F9FF", border: "none", color: "#2D3047", cursor: "pointer",
+  },
+  slotBtnActive: { background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)", color: "#fff" },
+  slotBtnDisabled: { color: "#D1D5F0", cursor: "not-allowed", textDecoration: "line-through" },
+  modalConfirmBtn: {
+    width: "100%", marginTop: "16px", padding: "12px", border: "none",
+    borderRadius: "10px", background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
+    color: "#fff", fontSize: "14px", fontWeight: 700, fontFamily: "'Poppins',sans-serif",
   },
   msgText: {
     display:    "block",

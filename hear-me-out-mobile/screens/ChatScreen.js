@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   FlatList, KeyboardAvoidingView, Platform, SafeAreaView,
+  Modal, ScrollView, ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -18,6 +19,16 @@ export default function ChatScreen({ navigation }) {
   const [roomId, setRoomId] = useState(null);
   const [reschedulingId, setReschedulingId] = useState(null);
   const [rescheduledIds, setRescheduledIds] = useState({});
+
+  // schedule modal (calendar + time slots) — opened from "missed schedule" notice
+  const [schedModalOpen, setSchedModalOpen] = useState(false);
+  const [schedTargetItem, setSchedTargetItem] = useState(null);
+  const [schedDate,       setSchedDate]      = useState("");
+  const [schedMonth,      setSchedMonth]     = useState(new Date());
+  const [schedSlots,      setSchedSlots]     = useState([]);
+  const [schedTime,       setSchedTime]      = useState("");
+  const [schedLoading,    setSchedLoading]   = useState(false);
+  const [schedErr,        setSchedErr]       = useState("");
 
   const flatRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -88,10 +99,10 @@ export default function ChatScreen({ navigation }) {
     if (item.senderId !== "system") return null;
     const text = item.message || "";
     if (text.startsWith("You missed your schedule")) {
-      return { endpoint: "/appointments", label: "📅 Reschedule Appointment" };
+      return { type: "missed", label: "📅 Reschedule Appointment" };
     }
     if (text.startsWith("Hello, we have a vacant schedule today")) {
-      return { endpoint: "/appointments/accept-vacancy", label: "✅ Yes, move me to today" };
+      return { type: "vacancy", endpoint: "/appointments/accept-vacancy", label: "✅ Yes, move me to today" };
     }
     return null;
   };
@@ -112,6 +123,71 @@ export default function ChatScreen({ navigation }) {
       setRescheduledIds((prev) => ({ ...prev, [item._id]: true }));
     } catch (e) {
       console.log("System action error:", e);
+    } finally {
+      setReschedulingId(null);
+    }
+  };
+
+  /* ── Calendar-based reschedule (opened from the "missed schedule" notice) ── */
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const startOfToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+  const isSelectableDay = (d) => { const dow = d.getDay(); return dow !== 0 && dow !== 6 && d >= startOfToday(); };
+  const getMonthGrid = (monthDate) => {
+    const year = monthDate.getFullYear(), month = monthDate.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = Array(firstDow).fill(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+    return cells;
+  };
+  const goToMonth = (offset) => setSchedMonth(m => new Date(m.getFullYear(), m.getMonth() + offset, 1));
+
+  const fetchSlotsForDate = async (dateStr) => {
+    setSchedLoading(true);
+    setSchedTime("");
+    try {
+      const res = await API.get(`/appointments/available-slots?date=${dateStr}`);
+      setSchedSlots(res.data.success ? (res.data.slots || []) : []);
+    } catch (e) {
+      setSchedSlots([]);
+    } finally {
+      setSchedLoading(false);
+    }
+  };
+
+  const openScheduleModal = (item) => {
+    let d = startOfToday();
+    while (!isSelectableDay(d)) d = new Date(d.getTime() + 86400000);
+    const firstDay = toDateStr(d);
+    setSchedTargetItem(item);
+    setSchedErr("");
+    setSchedMonth(d);
+    setSchedDate(firstDay);
+    setSchedModalOpen(true);
+    fetchSlotsForDate(firstDay);
+  };
+
+  const handleConfirmSchedule = async () => {
+    if (!schedDate || !schedTime) return;
+    setReschedulingId(schedTargetItem?._id);
+    setSchedErr("");
+    try {
+      const dt = new Date(`${schedDate}T${schedTime}:00`);
+      const res = await API.post("/appointments", { scheduleDate: dt });
+      if (res.data.success) {
+        const confirmText = res.data.appointment?.scheduleDate
+          ? `✅ New appointment scheduled: ${new Date(res.data.appointment.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`
+          : "✅ Appointment scheduled!";
+        socket.emit("sendMessage", { roomId: String(roomId), senderId: String(userId), message: confirmText });
+        if (schedTargetItem) setRescheduledIds((prev) => ({ ...prev, [schedTargetItem._id]: true }));
+        setSchedModalOpen(false);
+      } else {
+        setSchedErr(res.data.message || "Could not schedule that slot.");
+        fetchSlotsForDate(schedDate);
+      }
+    } catch (e) {
+      setSchedErr(e.response?.data?.message || "Error scheduling appointment.");
     } finally {
       setReschedulingId(null);
     }
@@ -144,7 +220,7 @@ export default function ChatScreen({ navigation }) {
         </View>
         {showAction && (
           <TouchableOpacity
-            onPress={() => handleSystemAction(item, action.endpoint)}
+            onPress={() => action.type === "missed" ? openScheduleModal(item) : handleSystemAction(item, action.endpoint)}
             disabled={reschedulingId === item._id}
             style={[styles.rescheduleBtn, reschedulingId === item._id && { opacity: 0.6 }]}
           >
@@ -241,6 +317,122 @@ export default function ChatScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Schedule Appointment Modal — opened from "missed schedule" notice */}
+      <Modal
+        visible={schedModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSchedModalOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSchedModalOpen(false)}
+        />
+        <View style={styles.schedSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>Schedule Your Appointment</Text>
+            <TouchableOpacity onPress={() => setSchedModalOpen(false)} style={styles.schedCloseBtn}>
+              <Text style={{ color:"#fff", fontSize:13 }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.schedSub}>Pick a date and an open time slot below.</Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
+            <View style={styles.calNavRow}>
+              <TouchableOpacity
+                onPress={() => goToMonth(-1)}
+                disabled={schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()}
+                style={[styles.calNavBtn, (schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()) && { opacity: 0.3 }]}
+              >
+                <Text style={{ color:"#fff", fontSize:16 }}>‹</Text>
+              </TouchableOpacity>
+              <Text style={styles.calNavLabel}>
+                {schedMonth.toLocaleDateString("en-US", { month:"long", year:"numeric" })}
+              </Text>
+              <TouchableOpacity onPress={() => goToMonth(1)} style={styles.calNavBtn}>
+                <Text style={{ color:"#fff", fontSize:16 }}>›</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.calWeekRow}>
+              {["S","M","T","W","T","F","S"].map((d, i) => (
+                <Text key={i} style={styles.calWeekDay}>{d}</Text>
+              ))}
+            </View>
+
+            <View style={styles.calGrid}>
+              {getMonthGrid(schedMonth).map((d, i) => {
+                if (!d) return <View key={i} style={styles.calDayCell} />;
+                const dStr = toDateStr(d);
+                const isSel = dStr === schedDate;
+                const isToday = dStr === toDateStr(startOfToday());
+                const selectable = isSelectableDay(d);
+                return (
+                  <View key={i} style={styles.calDayCell}>
+                    <TouchableOpacity
+                      disabled={!selectable}
+                      onPress={() => { setSchedDate(dStr); fetchSlotsForDate(dStr); }}
+                      style={[
+                        styles.calDay,
+                        isSel && styles.calDayActive,
+                        !selectable && styles.calDayDisabled,
+                        isToday && !isSel && styles.calDayToday,
+                      ]}
+                    >
+                      <Text style={[styles.calDayText, !selectable && { color:"rgba(255,255,255,0.15)" }]}>
+                        {d.getDate()}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+
+            <Text style={styles.schedSectionLabel}>AVAILABLE TIMES</Text>
+            {schedLoading ? (
+              <View style={{ paddingVertical:24, alignItems:"center" }}>
+                <ActivityIndicator color="#6C63FF" />
+              </View>
+            ) : schedSlots.every(sl => !sl.available) ? (
+              <Text style={styles.schedEmptyText}>No open slots this day — try another date.</Text>
+            ) : (
+              <View style={styles.slotGrid}>
+                {schedSlots.map(sl => (
+                  <TouchableOpacity
+                    key={sl.value}
+                    disabled={!sl.available}
+                    onPress={() => setSchedTime(sl.value)}
+                    style={[
+                      styles.slotBtn,
+                      schedTime === sl.value && styles.slotBtnActive,
+                      !sl.available && styles.slotBtnDisabled,
+                    ]}
+                  >
+                    <Text style={[styles.slotBtnText, !sl.available && styles.slotBtnTextDisabled]}>
+                      {sl.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {!!schedErr && <Text style={styles.schedErrText}>{schedErr}</Text>}
+
+            <TouchableOpacity
+              onPress={handleConfirmSchedule}
+              disabled={!schedTime || reschedulingId === schedTargetItem?._id}
+              style={[styles.schedConfirmBtn, (!schedTime || reschedulingId === schedTargetItem?._id) && { opacity: 0.5 }]}
+            >
+              <Text style={styles.schedConfirmBtnText}>
+                {reschedulingId === schedTargetItem?._id ? "Scheduling…" : "Confirm Appointment"}
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -349,4 +541,84 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
   sendIcon: { color: "#fff", fontSize: 17, fontWeight: "700" },
+
+  /* ── Schedule Appointment modal ── */
+  modalOverlay: { flex:1, backgroundColor:"rgba(0,0,0,0.55)" },
+  schedSheet: {
+    backgroundColor:"#181830",
+    borderTopLeftRadius:28, borderTopRightRadius:28,
+    paddingBottom:Platform.OS === "ios" ? 34 : 20,
+    paddingHorizontal:20,
+    paddingTop:12,
+    maxHeight:"88%",
+    borderWidth:1, borderColor:"rgba(255,255,255,0.08)",
+  },
+  sheetHandle: {
+    width:40, height:4, borderRadius:2,
+    backgroundColor:"rgba(255,255,255,0.2)",
+    alignSelf:"center", marginBottom:16,
+  },
+  sheetHeader: {
+    flexDirection:"row", justifyContent:"space-between", alignItems:"center",
+    marginBottom:14,
+  },
+  sheetTitle: { fontSize:16, fontWeight:"800", color:"#fff" },
+  schedCloseBtn: {
+    width:26, height:26, borderRadius:13,
+    backgroundColor:"rgba(255,255,255,0.1)",
+    alignItems:"center", justifyContent:"center",
+  },
+  schedSub: { fontSize:13, color:"rgba(255,255,255,0.45)", marginBottom:16 },
+  calNavRow: {
+    flexDirection:"row", alignItems:"center", justifyContent:"space-between",
+    marginBottom:14,
+  },
+  calNavBtn: {
+    width:30, height:30, borderRadius:15,
+    backgroundColor:"rgba(255,255,255,0.08)",
+    alignItems:"center", justifyContent:"center",
+  },
+  calNavLabel: { fontSize:14, fontWeight:"700", color:"#fff" },
+  calWeekRow: { flexDirection:"row", marginBottom:4 },
+  calWeekDay: {
+    width:`${100/7}%`, textAlign:"center",
+    fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.35)",
+  },
+  calGrid: { flexDirection:"row", flexWrap:"wrap", marginBottom:18 },
+  calDayCell: { width:`${100/7}%`, aspectRatio:1, padding:2 },
+  calDay: {
+    flex:1, borderRadius:10, alignItems:"center", justifyContent:"center",
+    backgroundColor:"rgba(255,255,255,0.04)",
+  },
+  calDayText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  calDayToday: { borderWidth:1.5, borderColor:"rgba(108,99,255,0.6)" },
+  calDayActive: { backgroundColor:"#6C63FF" },
+  calDayDisabled: { backgroundColor:"transparent" },
+  schedSectionLabel: {
+    fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.4)",
+    letterSpacing:1, marginBottom:10,
+  },
+  schedEmptyText: {
+    fontSize:13, color:"rgba(255,255,255,0.4)", textAlign:"center",
+    paddingVertical:20,
+  },
+  slotGrid: { flexDirection:"row", flexWrap:"wrap", gap:8, marginBottom:8 },
+  slotBtn: {
+    width:"31%", paddingVertical:10, borderRadius:10,
+    backgroundColor:"rgba(255,255,255,0.05)",
+    alignItems:"center",
+  },
+  slotBtnActive: { backgroundColor:"#6C63FF" },
+  slotBtnDisabled: { backgroundColor:"rgba(255,255,255,0.02)" },
+  slotBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  slotBtnTextDisabled: { color:"rgba(255,255,255,0.2)", textDecorationLine:"line-through" },
+  schedErrText: {
+    fontSize:13, fontWeight:"600", color:"#F87171",
+    textAlign:"center", marginTop:12,
+  },
+  schedConfirmBtn: {
+    marginTop:20, paddingVertical:14, borderRadius:12,
+    backgroundColor:"#6C63FF", alignItems:"center",
+  },
+  schedConfirmBtnText: { fontSize:15, fontWeight:"700", color:"#fff" },
 });
