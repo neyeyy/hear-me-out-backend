@@ -92,7 +92,8 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [pwMsg,    setPwMsg]    = useState({ text:"", ok:false });
 
   // cancel + history
-  const [history,    setHistory]    = useState([]);
+  const [history,        setHistory]        = useState([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [cancelMsg,  setCancelMsg]  = useState({ text:"", ok:false });
   const [requestMsg, setRequestMsg] = useState({ text:"", ok:false });
   const [requesting, setRequesting] = useState(false);
@@ -511,11 +512,11 @@ export default function StudentDashboardScreen({ navigation, route }) {
               {history.length > 1 && (
                 <View style={s.section}>
                   <Text style={s.sectionLabel}>APPOINTMENT HISTORY</Text>
-                  {history.map((h, i) => {
+                  {(showAllHistory ? history : history.slice(0, 3)).map((h, i, arr) => {
                     const colors = { PENDING:"#F7971E", ONGOING:"#6C63FF", DONE:"#4ECDC4", CANCELLED:"#9CA3AF" };
                     const c = colors[h.status] || "#9CA3AF";
                     return (
-                      <View key={h._id || i} style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingVertical:10, borderBottomWidth: i < history.length-1 ? 1 : 0, borderBottomColor:"rgba(255,255,255,0.06)" }}>
+                      <View key={h._id || i} style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingVertical:10, borderBottomWidth: i < arr.length-1 ? 1 : 0, borderBottomColor:"rgba(255,255,255,0.06)" }}>
                         <View>
                           <Text style={{ fontSize:12, color:c, fontWeight:"700" }}>{h.status}</Text>
                           <Text style={{ fontSize:11, color:"rgba(255,255,255,0.38)", marginTop:2 }}>
@@ -526,6 +527,13 @@ export default function StudentDashboardScreen({ navigation, route }) {
                       </View>
                     );
                   })}
+                  {history.length > 3 && (
+                    <TouchableOpacity onPress={() => setShowAllHistory(v => !v)} style={{ paddingTop:10, alignItems:"center" }}>
+                      <Text style={{ fontSize:12, fontWeight:"700", color:"#8B85FF" }}>
+                        {showAllHistory ? "Show less ▲" : `Show all ${history.length} past appointments ▾`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
