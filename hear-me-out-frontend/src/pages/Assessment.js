@@ -58,6 +58,9 @@ function Assessment() {
   const [result, setResult] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const [started, setStarted] = useState(false);
+  // true from the moment an answer is clicked until the next question has
+  // actually appeared — keeps a fast double-click from registering twice.
+  const [locked, setLocked] = useState(false);
 
   const navigate = useNavigate();
   const bottomRef = useRef(null);
@@ -96,6 +99,8 @@ function Assessment() {
   };
 
   const handleAnswer = (value, label) => {
+    if (locked) return; // a question transition is already in progress
+    setLocked(true);
     addUserMessage(label);
     const updated = [...answers, value];
     setAnswers(updated);
@@ -107,10 +112,16 @@ function Assessment() {
         // Entering the GAD-7 section
         simulateTyping(() => {
           addBotMessage("Now, over the last 2 weeks, how often have you been bothered by the following problems? (GAD-7)");
-          simulateTyping(() => addBotMessage(questions[next].text));
+          simulateTyping(() => {
+            addBotMessage(questions[next].text);
+            setLocked(false);
+          });
         });
       } else {
-        simulateTyping(() => addBotMessage(questions[next].text));
+        simulateTyping(() => {
+          addBotMessage(questions[next].text);
+          setLocked(false);
+        });
       }
     } else {
       submitAssessment(updated);
@@ -249,12 +260,21 @@ function Assessment() {
                     <button
                       key={i}
                       onClick={() => handleAnswer(opt.value, opt.label)}
-                      style={{ ...s.optBtn, borderColor: opt.color, color: opt.color }}
+                      disabled={locked}
+                      style={{
+                        ...s.optBtn,
+                        borderColor: opt.color,
+                        color: opt.color,
+                        opacity: locked ? 0.4 : 1,
+                        cursor: locked ? "default" : "pointer",
+                      }}
                       onMouseEnter={(e) => {
+                        if (locked) return;
                         e.currentTarget.style.background = opt.color;
                         e.currentTarget.style.color = "#fff";
                       }}
                       onMouseLeave={(e) => {
+                        if (locked) return;
                         e.currentTarget.style.background = "#fff";
                         e.currentTarget.style.color = opt.color;
                       }}

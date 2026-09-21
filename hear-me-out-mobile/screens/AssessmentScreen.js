@@ -63,6 +63,9 @@ export default function AssessmentScreen({ navigation }) {
   const [isTyping,    setIsTyping]    = useState(false);
   const [started,     setStarted]     = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
+  // true from the moment an answer is tapped until the next question has
+  // actually appeared — keeps a fast double-tap from registering twice.
+  const [locked,      setLocked]      = useState(false);
 
   const scrollRef = useRef(null);
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -113,6 +116,8 @@ export default function AssessmentScreen({ navigation }) {
   };
 
   const handleAnswer = (value, label) => {
+    if (locked) return; // a question transition is already in progress
+    setLocked(true);
     addUserMessage(label);
     const updated = [...answers, value];
     setAnswers(updated);
@@ -124,10 +129,16 @@ export default function AssessmentScreen({ navigation }) {
         // Entering the GAD-7 section
         simulateTyping(() => {
           addBotMessage("Now, over the last 2 weeks, how often have you been bothered by the following problems? (GAD-7)");
-          simulateTyping(() => addBotMessage(QUESTIONS[next].text));
+          simulateTyping(() => {
+            addBotMessage(QUESTIONS[next].text);
+            setLocked(false);
+          });
         });
       } else {
-        simulateTyping(() => addBotMessage(QUESTIONS[next].text));
+        simulateTyping(() => {
+          addBotMessage(QUESTIONS[next].text);
+          setLocked(false);
+        });
       }
     } else {
       submitAssessment(updated);
@@ -274,7 +285,8 @@ export default function AssessmentScreen({ navigation }) {
                     <TouchableOpacity
                       key={opt.value}
                       onPress={() => handleAnswer(opt.value, opt.label)}
-                      style={[styles.optBtn, { borderColor: opt.color }]}
+                      disabled={locked}
+                      style={[styles.optBtn, { borderColor: opt.color, opacity: locked ? 0.4 : 1 }]}
                       activeOpacity={0.75}
                     >
                       <Text style={[styles.optBtnText, { color: opt.color }]}>
