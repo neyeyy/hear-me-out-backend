@@ -1,15 +1,19 @@
 import { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Modal,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
+
+const YEAR_LEVELS = ["Grade 11", "Grade 12", "1st Year", "2nd Year", "3rd Year", "4th Year"];
 
 export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [yearLevel, setYearLevel] = useState("");
+  const [showYearPicker, setShowYearPicker] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
@@ -20,7 +24,7 @@ export default function RegisterScreen({ navigation }) {
     setError("");
     try {
       setLoading(true);
-      const res = await API.post("/auth/register", { name, email, password });
+      const res = await API.post("/auth/register", { name, email, password, yearLevel });
       if (res.data.success) {
         navigation.navigate("Login");
       } else {
@@ -108,6 +112,22 @@ export default function RegisterScreen({ navigation }) {
               </View>
             </View>
 
+            {/* Year Level */}
+            <View style={styles.group}>
+              <Text style={styles.label}>YEAR LEVEL</Text>
+              <TouchableOpacity
+                onPress={() => setShowYearPicker(true)}
+                style={[styles.inputRow, showYearPicker && styles.inputRowFocused]}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.fieldIcon}>🎓</Text>
+                <Text style={[styles.input, !yearLevel && { color: "#9CA3AF" }]}>
+                  {yearLevel || "Select year level"}
+                </Text>
+                <Text style={{ color: "#9CA3AF", fontSize: 12 }}>▾</Text>
+              </TouchableOpacity>
+            </View>
+
             {!!error && <Text style={{ color:"#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 }}>{error}</Text>}
 
             {/* Button */}
@@ -140,6 +160,35 @@ export default function RegisterScreen({ navigation }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Year Level picker */}
+      <Modal
+        visible={showYearPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowYearPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.pickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowYearPicker(false)}
+        >
+          <View style={styles.pickerSheet}>
+            <Text style={styles.pickerTitle}>Select Year Level</Text>
+            {YEAR_LEVELS.map((yr) => (
+              <TouchableOpacity
+                key={yr}
+                onPress={() => { setYearLevel(yr); setShowYearPicker(false); }}
+                style={[styles.pickerOption, yearLevel === yr && styles.pickerOptionActive]}
+              >
+                <Text style={[styles.pickerOptionText, yearLevel === yr && styles.pickerOptionTextActive]}>
+                  {yr}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -270,5 +319,45 @@ const styles = StyleSheet.create({
     color: "#4ECDC4",
     fontWeight: "700",
     textDecorationLine: "underline",
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  pickerSheet: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 12,
+  },
+  pickerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#374151",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  pickerOption: {
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  pickerOptionActive: {
+    backgroundColor: "#F0FDFB",
+  },
+  pickerOptionText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1A1A2E",
+  },
+  pickerOptionTextActive: {
+    color: "#44A08D",
   },
 });
