@@ -32,6 +32,32 @@ function durationFor(severity) { return DURATION_BY_SEVERITY[severity] || 30; }
 // silently treating them as a 30-min LOW session.
 function effectiveDuration(appt) { return appt.durationMinutes || durationFor(appt.severity); }
 
+/* ── PHQ-9 / GAD-7 scoring ───────────────────────────────────
+   Official clinical cutoffs (Kroenke et al., 2001; Spitzer et al., 2006).
+─────────────────────────────────────────────────────────────── */
+function phq9SeverityFor(score) {
+  if (score >= 20) return "severe";
+  if (score >= 15) return "moderately_severe";
+  if (score >= 10) return "moderate";
+  if (score >= 5)  return "mild";
+  return "minimal";
+}
+
+function gad7SeverityFor(score) {
+  if (score >= 15) return "severe";
+  if (score >= 10) return "moderate";
+  if (score >= 5)  return "mild";
+  return "minimal";
+}
+
+// Maps a clinical severity band to the app's own LOW/MEDIUM/HIGH risk tier,
+// which drives appointment scheduling and counselor triage.
+const RISK_TIER = {
+  minimal: "LOW", mild: "LOW",
+  moderate: "MEDIUM",
+  moderately_severe: "HIGH", severe: "HIGH",
+};
+
 // A slot must not run into the 12–1 PM lunch break or past the 4 PM close.
 function slotFitsOfficeHours(slot, durationMinutes) {
   const startMin = slot.h * 60 + slot.m;
@@ -134,22 +160,36 @@ exports.createAssessment = async (req, res) => {
     console.log("🔥 createAssessment HIT");
 
     const studentId = req.user.id;
-    const { answers } = req.body || {};
+    const { phq9Answers, gad7Answers } = req.body || {};
 
-    if (!answers || !Array.isArray(answers)) {
+    if (!Array.isArray(phq9Answers) || phq9Answers.length !== 9 ||
+        !Array.isArray(gad7Answers) || gad7Answers.length !== 7) {
       return res.json({
         success: false,
-        message: "Answers are required"
+        message: "A complete PHQ-9 (9 items) and GAD-7 (7 items) response is required"
       });
     }
 
-    // ✅ CALCULATE SCORE
-    const score = answers.reduce((sum, val) => sum + Number(val), 0);
+    // ✅ CALCULATE SCORES (each instrument scored on its own official scale)
+    const phq9Score = phq9Answers.reduce((sum, val) => sum + Number(val), 0);
+    const gad7Score = gad7Answers.reduce((sum, val) => sum + Number(val), 0);
+    const score = phq9Score + gad7Score;
+    const answers = [...phq9Answers, ...gad7Answers];
 
-    // ✅ DETERMINE SEVERITY
+    const phq9Severity = phq9SeverityFor(phq9Score);
+    const gad7Severity = gad7SeverityFor(gad7Score);
+
+    // ✅ DETERMINE OVERALL SEVERITY — the worse of the two instruments.
     let severity = "LOW";
-    if (score >= 10) severity = "HIGH";
-    else if (score >= 5) severity = "MEDIUM";
+    if (RISK_TIER[phq9Severity] === "HIGH" || RISK_TIER[gad7Severity] === "HIGH") {
+      severity = "HIGH";
+    } else if (RISK_TIER[phq9Severity] === "MEDIUM" || RISK_TIER[gad7Severity] === "MEDIUM") {
+      severity = "MEDIUM";
+    }
+
+    // PHQ-9 item 9 screens for thoughts of self-harm — any non-zero answer
+    // is escalated to HIGH regardless of the totals, per standard practice.
+    if (Number(phq9Answers[8]) > 0) severity = "HIGH";
 
     // 🔥 CREATE APPOINTMENT FIRST (IMPORTANT FIX)
     let appointment = null;
@@ -191,6 +231,12 @@ exports.createAssessment = async (req, res) => {
       answers,
       score,
       severity,
+      phq9Answers,
+      phq9Score,
+      phq9Severity,
+      gad7Answers,
+      gad7Score,
+      gad7Severity,
       appointmentId: appointment ? appointment._id : null
     });
 
@@ -199,6 +245,10 @@ exports.createAssessment = async (req, res) => {
       message: "Assessment submitted",
       score,
       severity,
+      phq9Score,
+      phq9Severity,
+      gad7Score,
+      gad7Severity,
       assessment: newAssessment,
       appointment // 🔥 ALWAYS returned now (even if existing)
     });

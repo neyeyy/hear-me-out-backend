@@ -2,20 +2,54 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../services/api";
 
-const questions = [
-  "I feel nervous or anxious",
-  "I have trouble sleeping",
-  "I feel overwhelmed",
-  "I feel sad or hopeless",
-  "I have difficulty concentrating"
+// Official PHQ-9 (depression) and GAD-7 (anxiety) screening instruments —
+// wording and scale match the standard clinical form.
+const PHQ9_QUESTIONS = [
+  "Little interest or pleasure in doing things.",
+  "Feeling down, depressed, or hopeless.",
+  "Trouble falling or staying asleep, or sleeping too much.",
+  "Feeling tired or having little energy.",
+  "Poor appetite or overeating.",
+  "Feeling bad about yourself – or that you are a failure or have let yourself or your family down.",
+  "Trouble concentrating on things, such as reading the newspaper or watching television.",
+  "Moving or speaking so slowly that other people could have noticed. Or the opposite – being so fidgety or restless that you have been moving around a lot more than usual.",
+  "Thoughts that you would be better off dead, or of hurting yourself in some way.",
 ];
 
-const OPTIONS = [
-  { value: 0, label: "Not at all", color: "#4ECDC4" },
-  { value: 1, label: "Several days", color: "#6C63FF" },
-  { value: 2, label: "More than half", color: "#FFB347" },
-  { value: 3, label: "Nearly every day", color: "#FF6B6B" }
+const GAD7_QUESTIONS = [
+  "Feeling nervous, anxious, or on edge.",
+  "Not being able to stop or control worrying.",
+  "Worrying too much about different things.",
+  "Trouble relaxing.",
+  "Being so restless that it's hard to sit still.",
+  "Becoming easily annoyed or irritable.",
+  "Feeling afraid as if something awful might happen.",
 ];
+
+const questions = [
+  ...PHQ9_QUESTIONS.map((text) => ({ text, section: "PHQ9" })),
+  ...GAD7_QUESTIONS.map((text) => ({ text, section: "GAD7" })),
+];
+
+const OPTIONS_BY_SECTION = {
+  PHQ9: [
+    { value: 0, label: "Not at all", color: "#4ECDC4" },
+    { value: 1, label: "Several days", color: "#6C63FF" },
+    { value: 2, label: "More than half the days", color: "#FFB347" },
+    { value: 3, label: "Nearly every day", color: "#FF6B6B" }
+  ],
+  GAD7: [
+    { value: 0, label: "Not at all sure", color: "#4ECDC4" },
+    { value: 1, label: "Several days", color: "#6C63FF" },
+    { value: 2, label: "Over half the days", color: "#FFB347" },
+    { value: 3, label: "Nearly every day", color: "#FF6B6B" }
+  ],
+};
+
+function formatBand(band) {
+  if (!band) return "";
+  return band.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
+}
 
 function Assessment() {
   const [messages, setMessages] = useState([]);
@@ -50,7 +84,10 @@ function Assessment() {
 
   const startChat = useCallback(() => {
     addBotMessage("Hello 👋 I'm your Assessment Bot.");
-    simulateTyping(() => addBotMessage(questions[0]));
+    simulateTyping(() => {
+      addBotMessage("Over the last 2 weeks, how often have you been bothered by the following problems? (PHQ-9)");
+      simulateTyping(() => addBotMessage(questions[0].text));
+    });
   }, [addBotMessage, simulateTyping]);
 
   const handleStart = () => {
@@ -66,7 +103,15 @@ function Assessment() {
     if (current < questions.length - 1) {
       const next = current + 1;
       setCurrent(next);
-      simulateTyping(() => addBotMessage(questions[next]));
+      if (next === PHQ9_QUESTIONS.length) {
+        // Entering the GAD-7 section
+        simulateTyping(() => {
+          addBotMessage("Now, over the last 2 weeks, how often have you been bothered by the following problems? (GAD-7)");
+          simulateTyping(() => addBotMessage(questions[next].text));
+        });
+      } else {
+        simulateTyping(() => addBotMessage(questions[next].text));
+      }
     } else {
       submitAssessment(updated);
     }
@@ -74,12 +119,14 @@ function Assessment() {
 
   const submitAssessment = async (finalAnswers) => {
     try {
-      const res = await API.post("/assessment", { answers: finalAnswers });
+      const phq9Answers = finalAnswers.slice(0, PHQ9_QUESTIONS.length);
+      const gad7Answers = finalAnswers.slice(PHQ9_QUESTIONS.length);
+      const res = await API.post("/assessment", { phq9Answers, gad7Answers });
       setResult(res.data);
 
       simulateTyping(() => {
-        addBotMessage(`Your score is ${res.data.score}`);
-        addBotMessage(`Severity: ${res.data.severity}`);
+        addBotMessage(`PHQ-9 (depression) score: ${res.data.phq9Score}/27 — ${formatBand(res.data.phq9Severity)}`);
+        addBotMessage(`GAD-7 (anxiety) score: ${res.data.gad7Score}/21 — ${formatBand(res.data.gad7Severity)}`);
 
         if (res.data.severity === "HIGH") {
           addBotMessage("⚠️ We recommend immediate counseling.");
@@ -145,13 +192,13 @@ function Assessment() {
             <div style={s.welcomeIcon}>🧠</div>
             <h2 style={s.welcomeTitle}>Mental Health Check‑in</h2>
             <p style={s.welcomeText}>
-              A quick 5-question assessment to understand how you're feeling.
+              A PHQ-9 and GAD-7 assessment to understand how you're feeling.
               Your answers are private and help us support you better.
             </p>
             <div style={s.pillRow}>
-              <span style={s.pill}>🕐 ~2 min</span>
+              <span style={s.pill}>🕐 ~5 min</span>
               <span style={s.pill}>🔒 Private</span>
-              <span style={s.pill}>💙 5 Questions</span>
+              <span style={s.pill}>💙 16 Questions</span>
             </div>
             <button onClick={handleStart} style={s.startBtn}>
               Begin Assessment →
@@ -198,7 +245,7 @@ function Assessment() {
               <div style={s.options}>
                 <p style={s.optHint}>Choose your answer:</p>
                 <div style={s.optGrid}>
-                  {OPTIONS.map((opt, i) => (
+                  {OPTIONS_BY_SECTION[questions[current].section].map((opt, i) => (
                     <button
                       key={i}
                       onClick={() => handleAnswer(opt.value, opt.label)}
