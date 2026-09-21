@@ -128,6 +128,13 @@ export default function StudentDashboardScreen({ navigation, route }) {
     if (step === "pick") animateIn();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The "Appointment cancelled." message never cleared itself, so it kept
+  // showing under a brand-new appointment once one was created afterward.
+  // Clear it as soon as a genuinely different appointment shows up.
+  useEffect(() => {
+    setCancelMsg({ text: "", ok: false });
+  }, [appointment?._id]);
+
   /* ─── init ── */
   useEffect(() => {
     AsyncStorage.multiGet(["name","userId","email"]).then(pairs => {
