@@ -727,10 +727,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
             <ScrollView contentContainerStyle={s.pickContent} showsVerticalScrollIndicator={false}>
               <Animated.View style={{ opacity: fadeAnim, transform:[{ translateY: slideAnim }] }}>
                 <View style={s.topRow}>
-                  <TouchableOpacity onPress={() => setStep("dashboard")} style={s.backCircle}>
-                    <Text style={s.backCircleText}>←</Text>
-                  </TouchableOpacity>
-                  <View style={{ flex:1, marginLeft:12 }}>
+                  <View style={{ flex:1 }}>
                     <Text style={s.greeting2}>How are you feeling?</Text>
                     <Text style={s.dateText}>
                       {new Date().toLocaleDateString("en-US",{ weekday:"long", month:"long", day:"numeric" })}
