@@ -1,10 +1,15 @@
 import { useState, useRef, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Animated, SafeAreaView,
+  Animated, SafeAreaView, Platform, StatusBar,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
+
+// react-native's core SafeAreaView only applies inset padding on iOS — on
+// Android it's a no-op, so the header sat under/behind the status bar
+// without this, making it hard to see and tap.
+const ANDROID_STATUS_BAR_PAD = Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 0;
 
 // Official PHQ-9 (depression) and GAD-7 (anxiety) screening instruments —
 // wording and scale match the standard clinical form.
@@ -327,7 +332,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    paddingTop: 8,
+    paddingTop: 8 + ANDROID_STATUS_BAR_PAD,
     gap: 12,
   },
   botAvatar: {

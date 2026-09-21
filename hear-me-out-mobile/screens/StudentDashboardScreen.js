@@ -11,6 +11,11 @@ import MoodCalendar from "../components/MoodCalendar";
 
 const LOGO = require("../assets/logo.png");
 
+// react-native's core SafeAreaView only applies inset padding on iOS — on
+// Android it's a no-op, so header content (logo, buttons) sat under/behind
+// the status bar without this, making the top row hard to see and tap.
+const ANDROID_STATUS_BAR_PAD = Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 0;
+
 /* ─── constants ────────────────────────────────────── */
 const MOOD_QUOTES = {
   HAPPY: [
@@ -981,7 +986,7 @@ const s = StyleSheet.create({
   blob: { position:"absolute", borderRadius:999, backgroundColor:"#6C63FF", opacity:0.1 },
 
   /* ── Dashboard ── */
-  dashContent: { paddingHorizontal:22, paddingTop:16, paddingBottom:40 },
+  dashContent: { paddingHorizontal:22, paddingTop: 16 + ANDROID_STATUS_BAR_PAD, paddingBottom:40 },
   dashHeader: {
     flexDirection:"row", alignItems:"flex-start",
     marginBottom:24, flexWrap:"wrap", gap:10,
@@ -1186,7 +1191,7 @@ const s = StyleSheet.create({
   notifTime: { fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:4 },
 
   /* ── Pick mood ── */
-  pickContent: { paddingHorizontal:22, paddingTop:16, paddingBottom:32 },
+  pickContent: { paddingHorizontal:22, paddingTop: 16 + ANDROID_STATUS_BAR_PAD, paddingBottom:32 },
   topRow: { flexDirection:"row", alignItems:"center", marginBottom:28 },
   backCircle: {
     width:40, height:40, borderRadius:20,
@@ -1212,7 +1217,7 @@ const s = StyleSheet.create({
   hint: { color:"rgba(255,255,255,0.3)", fontSize:12, fontWeight:"500", letterSpacing:0.5 },
 
   /* ── Note step ── */
-  noteContent: { paddingHorizontal:24, paddingTop:20, paddingBottom:48 },
+  noteContent: { paddingHorizontal:24, paddingTop: 20 + ANDROID_STATUS_BAR_PAD, paddingBottom:48 },
   backBtn: { alignSelf:"flex-start", paddingVertical:8, paddingHorizontal:4, marginBottom:20 },
   backBtnText: { color:"rgba(255,255,255,0.75)", fontSize:15, fontWeight:"600" },
   bigEmojiWrap: { width:120, height:120, borderRadius:60, backgroundColor:"rgba(255,255,255,0.2)", justifyContent:"center", alignItems:"center", marginBottom:14, borderWidth:2, borderColor:"rgba(255,255,255,0.3)" },
@@ -1235,7 +1240,7 @@ const s = StyleSheet.create({
   skipBtnText: { color:"rgba(255,255,255,0.45)", fontSize:13, fontWeight:"500" },
 
   /* ── Profile ── */
-  profileContent: { paddingHorizontal:22, paddingTop:16, paddingBottom:48 },
+  profileContent: { paddingHorizontal:22, paddingTop: 16 + ANDROID_STATUS_BAR_PAD, paddingBottom:48 },
   avatarWrap: { alignItems:"center", marginBottom:28, marginTop:8 },
   avatarCircle: { width:80, height:80, borderRadius:40, justifyContent:"center", alignItems:"center", marginBottom:12 },
   avatarLetter: { fontSize:34, fontWeight:"800", color:"#fff" },

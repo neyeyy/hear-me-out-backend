@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  FlatList, KeyboardAvoidingView, Platform, SafeAreaView,
+  FlatList, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar,
   Modal, ScrollView, ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -10,6 +10,11 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 
 const socket = io("https://hear-me-out-backend-production-8100.up.railway.app");
+
+// react-native's core SafeAreaView only applies inset padding on iOS — on
+// Android it's a no-op, so the header sat under/behind the status bar
+// without this, making it hard to see and tap.
+const ANDROID_STATUS_BAR_PAD = Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 0;
 
 export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");
@@ -455,7 +460,7 @@ export default function ChatScreen({ navigation }) {
 const styles = StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center",
-    padding: 14, paddingTop: 8, gap: 10,
+    padding: 14, paddingTop: 8 + ANDROID_STATUS_BAR_PAD, gap: 10,
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 18,
