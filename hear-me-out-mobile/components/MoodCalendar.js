@@ -86,6 +86,11 @@ export default function MoodCalendar() {
       ? { blank: true, key: `b${i}` }
       : { blank: false, key: `d${i}`, day: i - firstDayOffset + 1 }
   );
+  // Explicit 7-cell week rows — flexWrap on a repeating 100/7% width can
+  // drift from pixel rounding and silently break the row after 6 cells,
+  // shifting every date after it onto the wrong weekday.
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
   if (loading) {
     return (
@@ -131,47 +136,51 @@ export default function MoodCalendar() {
         ))}
       </View>
 
-      {/* Calendar grid */}
-      <View style={s.grid}>
-        {cells.map(cell => {
-          if (cell.blank) return <View key={cell.key} style={s.cellOuter} />;
-          const { day } = cell;
-          const entries = days[day] || [];
-          // Show the most recent mood of the day on the cell
-          const latestMood = entries.length > 0 ? entries[entries.length - 1].mood : null;
-          const m       = latestMood ? MOODS[latestMood] : null;
-          const isToday = isCurrentMonth && day === today.getDate();
-          const bg      = m ? m.color
-            : isToday ? "rgba(91,107,216,0.35)"
-            : "rgba(255,255,255,0.06)";
+      {/* Calendar grid — one explicit row per week */}
+      <View style={{ marginBottom: 14 }}>
+        {weeks.map((week, wi) => (
+          <View key={wi} style={s.gridRow}>
+            {week.map(cell => {
+              if (cell.blank) return <View key={cell.key} style={s.cellOuter} />;
+              const { day } = cell;
+              const entries = days[day] || [];
+              // Show the most recent mood of the day on the cell
+              const latestMood = entries.length > 0 ? entries[entries.length - 1].mood : null;
+              const m       = latestMood ? MOODS[latestMood] : null;
+              const isToday = isCurrentMonth && day === today.getDate();
+              const bg      = m ? m.color
+                : isToday ? "rgba(91,107,216,0.35)"
+                : "rgba(255,255,255,0.06)";
 
-          return (
-            <View key={cell.key} style={s.cellOuter}>
-              <TouchableOpacity
-                activeOpacity={entries.length > 0 ? 0.7 : 1}
-                onPress={() => entries.length > 0 && setSelectedDay({ day, entries })}
-                style={[
-                  s.cellInner,
-                  { backgroundColor: bg },
-                  isToday && !m && s.todayOutline,
-                ]}
-              >
-                {entries.length > 1 && (
-                  <View style={s.multiDot} />
-                )}
-                {m ? (
-                  <Text style={s.cellEmoji}>{m.emoji}</Text>
-                ) : (
-                  <Text style={[s.cellDay, {
-                    color: isToday ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)",
-                  }]}>
-                    {day}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          );
-        })}
+              return (
+                <View key={cell.key} style={s.cellOuter}>
+                  <TouchableOpacity
+                    activeOpacity={entries.length > 0 ? 0.7 : 1}
+                    onPress={() => entries.length > 0 && setSelectedDay({ day, entries })}
+                    style={[
+                      s.cellInner,
+                      { backgroundColor: bg },
+                      isToday && !m && s.todayOutline,
+                    ]}
+                  >
+                    {entries.length > 1 && (
+                      <View style={s.multiDot} />
+                    )}
+                    {m ? (
+                      <Text style={s.cellEmoji}>{m.emoji}</Text>
+                    ) : (
+                      <Text style={[s.cellDay, {
+                        color: isToday ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)",
+                      }]}>
+                        {day}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        ))}
       </View>
 
       {/* Legend */}
@@ -336,18 +345,18 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
 
-  grid: {
+  gridRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 14,
   },
+  // No padding here — padding on top of a percentage width can push 7
+  // columns just past 100% and silently wrap the row after 6 cells instead.
   cellOuter: {
     width: `${100 / 7}%`,
     aspectRatio: 1,
-    padding: 2.5,
   },
   cellInner: {
     flex: 1,
+    margin: 2.5,
     borderRadius: 7,
     justifyContent: "center",
     alignItems: "center",
