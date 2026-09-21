@@ -149,8 +149,14 @@ export default function LoginScreen({ navigation }) {
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* Footer - Only Forgot Password, No Register */}
+          {/* Footer */}
           <View style={[styles.footerRow, { marginTop: 24 }]}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate("Register")}>
+              <Text style={styles.link}>Create one</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={[styles.footerRow, { marginTop: 8 }]}>
             <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
               <Text style={styles.link}>Forgot password?</Text>
             </TouchableOpacity>
@@ -271,6 +277,11 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: "row",
     justifyContent: "center",
+    alignItems: "center",
+  },
+  footerText: {
+    fontSize: 14,
+    color: "#6B7280",
   },
   link: {
     fontSize: 14,
