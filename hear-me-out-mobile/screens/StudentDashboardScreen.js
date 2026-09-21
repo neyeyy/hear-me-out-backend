@@ -556,11 +556,6 @@ export default function StudentDashboardScreen({ navigation, route }) {
                   </View>
                 </TouchableOpacity>
               </View>
-
-              {/* Logout */}
-              <TouchableOpacity onPress={handleLogout} style={s.logoutBtn}>
-                <Text style={s.logoutText}>Sign out</Text>
-              </TouchableOpacity>
             </ScrollView>
           </SafeAreaView>
         </LinearGradient>
@@ -1074,14 +1069,6 @@ const s = StyleSheet.create({
     borderWidth:1.5, borderColor:"rgba(255,255,255,0.18)",
   },
   chatCounselorBtnText: { color:"rgba(255,255,255,0.8)", fontSize:14, fontWeight:"700" },
-
-  logoutBtn: {
-    alignItems:"center", paddingVertical:14,
-    borderRadius:14, borderWidth:1,
-    borderColor:"rgba(255,255,255,0.12)",
-    backgroundColor:"rgba(255,255,255,0.04)",
-  },
-  logoutText: { fontSize:14, color:"rgba(255,255,255,0.4)", fontWeight:"600" },
 
   /* ── Notification Modal ── */
   modalOverlay: {
