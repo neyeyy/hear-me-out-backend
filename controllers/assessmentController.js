@@ -114,6 +114,22 @@ async function findNextAvailableSlot(daysFromNow, durationMinutes = 30) {
   return fallbackDay;
 }
 
+// Find the next open slot LATER TODAY only (no rollover to another day).
+// Returns null if today is a weekend, already past office hours, or fully booked.
+async function findNextAvailableSlotToday(durationMinutes = 30) {
+  const now = new Date();
+  if (now.getDay() === 0 || now.getDay() === 6) return null; // weekend
+
+  for (const slot of TIME_SLOTS) {
+    if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
+    const slotDate = new Date(now);
+    slotDate.setHours(slot.h, slot.m, 0, 0);
+    if (slotDate <= now) continue; // slot already passed
+    if (!(await hasOverlap(slotDate, durationMinutes))) return slotDate;
+  }
+  return null;
+}
+
 // 🔥 AUTO APPOINTMENT FUNCTION
 const createAutoAppointment = async (studentId, severity, source) => {
   try {
@@ -128,10 +144,20 @@ const createAutoAppointment = async (studentId, severity, source) => {
       return existing;
     }
 
-    // Days out by severity: HIGH=1, MEDIUM=3
-    const daysOut = severity === "HIGH" ? 1 : 3;
     const durationMinutes = durationFor(severity);
-    const scheduleDate = await findNextAvailableSlot(daysOut, durationMinutes);
+    let scheduleDate;
+
+    if (severity === "HIGH") {
+      // Urgent — book the soonest possible slot, today if one is still open,
+      // rather than automatically skipping to tomorrow.
+      scheduleDate = await findNextAvailableSlotToday(durationMinutes);
+      if (!scheduleDate) {
+        scheduleDate = await findNextAvailableSlot(1, durationMinutes);
+      }
+    } else {
+      // MEDIUM — not urgent enough to need a same-day slot.
+      scheduleDate = await findNextAvailableSlot(3, durationMinutes);
+    }
 
     const appointment = await Appointment.create({
       studentId,
