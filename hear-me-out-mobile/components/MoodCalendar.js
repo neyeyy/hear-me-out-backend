@@ -12,7 +12,7 @@ const MOODS = {
   ANXIOUS:  { color: "#F87171", emoji: "😰", label: "Anxious" },
 };
 
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December",
@@ -76,7 +76,7 @@ export default function MoodCalendar() {
 
   const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const daysInMonth    = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDayOffset = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
+  const firstDayOffset = new Date(viewYear, viewMonth, 1).getDay(); // Sunday-first, matching the schedule calendar
   const days           = moodMap();
   const trackedCount   = Object.keys(days).length;
 
