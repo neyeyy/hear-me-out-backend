@@ -1,13 +1,11 @@
 import { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Image,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../services/api";
-
-const LOGO = require("../assets/logo.png");
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -73,9 +71,7 @@ export default function LoginScreen({ navigation }) {
               backgroundColor: "#1a1a2e",
               alignItems: "center", justifyContent: "center",
               marginBottom: 10, overflow: "hidden"
-            }}>
-              <Image source={LOGO} style={{ width: 72, height: 72, resizeMode: "contain" }} />
-            </View>
+            }} />
             <Text style={styles.title}>Hear Me Out</Text>
             <Text style={styles.subtitle}>Your mental wellness companion</Text>
           </View>
