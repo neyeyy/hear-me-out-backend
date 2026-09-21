@@ -143,6 +143,15 @@ export default function ChatScreen({ navigation }) {
   };
   const goToMonth = (offset) => setSchedMonth(m => new Date(m.getFullYear(), m.getMonth() + offset, 1));
 
+  // Splits a flat list of month cells into fixed 7-cell week rows, so the
+  // grid can be rendered as one explicit <View row> per week instead of
+  // relying on flexWrap to break exactly every 7 cells.
+  const chunkIntoWeeks = (cells) => {
+    const weeks = [];
+    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+    return weeks;
+  };
+
   const fetchSlotsForDate = async (dateStr) => {
     setSchedLoading(true);
     setSchedTime("");
@@ -363,32 +372,38 @@ export default function ChatScreen({ navigation }) {
               ))}
             </View>
 
-            <View style={styles.calGrid}>
-              {getMonthGrid(schedMonth).map((d, i) => {
-                if (!d) return <View key={i} style={styles.calDayCell} />;
-                const dStr = toDateStr(d);
-                const isSel = dStr === schedDate;
-                const isToday = dStr === toDateStr(startOfToday());
-                const selectable = isSelectableDay(d);
-                return (
-                  <View key={i} style={styles.calDayCell}>
-                    <TouchableOpacity
-                      disabled={!selectable}
-                      onPress={() => { setSchedDate(dStr); fetchSlotsForDate(dStr); }}
-                      style={[
-                        styles.calDay,
-                        isSel && styles.calDayActive,
-                        !selectable && styles.calDayDisabled,
-                        isToday && !isSel && styles.calDayToday,
-                      ]}
-                    >
-                      <Text style={[styles.calDayText, !selectable && { color:"rgba(255,255,255,0.15)" }]}>
-                        {d.getDate()}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
+            {/* Day grid — built as explicit 7-cell week rows so a cell can
+                never wrap onto the wrong row from pixel-rounding drift. */}
+            <View style={{ marginBottom:18 }}>
+              {chunkIntoWeeks(getMonthGrid(schedMonth)).map((week, wi) => (
+                <View key={wi} style={styles.calWeekGridRow}>
+                  {week.map((d, i) => {
+                    if (!d) return <View key={i} style={styles.calDayCell} />;
+                    const dStr = toDateStr(d);
+                    const isSel = dStr === schedDate;
+                    const isToday = dStr === toDateStr(startOfToday());
+                    const selectable = isSelectableDay(d);
+                    return (
+                      <View key={i} style={styles.calDayCell}>
+                        <TouchableOpacity
+                          disabled={!selectable}
+                          onPress={() => { setSchedDate(dStr); fetchSlotsForDate(dStr); }}
+                          style={[
+                            styles.calDay,
+                            isSel && styles.calDayActive,
+                            !selectable && styles.calDayDisabled,
+                            isToday && !isSel && styles.calDayToday,
+                          ]}
+                        >
+                          <Text style={[styles.calDayText, !selectable && { color:"rgba(255,255,255,0.15)" }]}>
+                            {d.getDate()}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
 
             <Text style={styles.schedSectionLabel}>AVAILABLE TIMES</Text>
@@ -585,6 +600,7 @@ const styles = StyleSheet.create({
     fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.35)",
   },
   calGrid: { flexDirection:"row", flexWrap:"wrap", marginBottom:18 },
+  calWeekGridRow: { flexDirection:"row" },
   // No padding here — padding on top of a percentage width can push 7
   // columns just past 100% and silently wrap the row after 6 cells instead.
   calDayCell: { width:`${100/7}%`, aspectRatio:1 },
