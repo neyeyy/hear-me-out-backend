@@ -1112,9 +1112,11 @@ const s = StyleSheet.create({
     fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.35)",
   },
   calGrid: { flexDirection:"row", flexWrap:"wrap", marginBottom:18 },
-  calDayCell: { width:`${100/7}%`, aspectRatio:1, padding:2 },
+  // No padding here — padding on top of a percentage width can push 7
+  // columns just past 100% and silently wrap the row after 6 cells instead.
+  calDayCell: { width:`${100/7}%`, aspectRatio:1 },
   calDay: {
-    flex:1, borderRadius:10, alignItems:"center", justifyContent:"center",
+    flex:1, margin:2, borderRadius:10, alignItems:"center", justifyContent:"center",
     backgroundColor:"rgba(255,255,255,0.04)",
   },
   calDayText: { fontSize:13, fontWeight:"600", color:"#fff" },
