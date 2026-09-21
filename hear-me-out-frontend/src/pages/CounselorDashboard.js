@@ -107,6 +107,16 @@ export default function CounselorDashboard() {
 
   const counselorName = localStorage.getItem("name") || "Counselor";
 
+  // Visiting /admin directly (bookmark, typed URL) without a valid counselor
+  // session used to crash the page instead of sending the visitor to log in.
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const role = localStorage.getItem("role");
+    if (!token || role !== "counselor") {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
+
   useEffect(() => {
     Promise.all([fetchStudents(), fetchAppointments(), fetchAnalytics()])
       .finally(() => setLoading(false));
@@ -223,7 +233,7 @@ export default function CounselorDashboard() {
   const loadConversations = useCallback(async () => {
     try {
       const res = await API.get("/messages/conversations");
-      setConversations(res.data || []);
+      setConversations(Array.isArray(res.data) ? res.data : []);
     } catch (e) { console.log(e); }
   }, []);
 

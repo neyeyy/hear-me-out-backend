@@ -115,6 +115,16 @@ export default function StudentDashboard() {
   const userName  = localStorage.getItem("name")  || "Student";
   const userEmail = localStorage.getItem("email") || "";
 
+  // Visiting /student directly (bookmark, typed URL) without a valid student
+  // session used to render a broken, empty dashboard instead of the login page.
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const role = localStorage.getItem("role");
+    if (!token || role !== "student") {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
+
   useEffect(() => {
     fetchAppointment();
     fetchHistory();
