@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
+import * as Updates from "expo-updates";
 
 import LoginScreen            from "./screens/LoginScreen";
 import RegisterScreen         from "./screens/RegisterScreen";
@@ -13,6 +15,26 @@ import ForgotPasswordScreen   from "./screens/ForgotPasswordScreen";
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  // Actively check for and apply a newer OTA update on every launch, rather
+  // than relying on the default silent "downloads now, applies next launch"
+  // behavior — which is easy to mistake for updates not working at all.
+  useEffect(() => {
+    async function applyLatestUpdate() {
+      if (__DEV__) return;
+      try {
+        const { isAvailable } = await Updates.checkForUpdateAsync();
+        if (isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (e) {
+        // No network, no update server reachable, etc. — continue with
+        // whatever bundle is already installed.
+      }
+    }
+    applyLatestUpdate();
+  }, []);
+
   return (
     <NavigationContainer>
       <StatusBar style="light" />
