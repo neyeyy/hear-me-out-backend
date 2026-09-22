@@ -403,7 +403,9 @@ const s = StyleSheet.create({
   /* ── Bottom sheet modal ── */
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    // No dark dimming — with the drag-to-dismiss handle, a static overlay
+    // looked disconnected from the sheet sliding away underneath it.
+    backgroundColor: "transparent",
   },
   sheet: {
     backgroundColor: "#1E2037",

@@ -577,7 +577,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
           onRequestClose={() => setShowNotif(false)}
         >
           <TouchableOpacity
-            style={s.modalOverlay}
+            style={s.noBgOverlay}
             activeOpacity={1}
             onPress={() => setShowNotif(false)}
           />
@@ -1084,6 +1084,12 @@ const s = StyleSheet.create({
   /* ── Notification Modal ── */
   modalOverlay: {
     flex:1, backgroundColor:"rgba(0,0,0,0.55)",
+  },
+  // Same tappable full-screen area as modalOverlay, but with no dark dimming —
+  // used behind sheets with a drag-to-dismiss handle, since a static overlay
+  // looked disconnected from the sheet sliding away underneath it.
+  noBgOverlay: {
+    flex:1, backgroundColor:"transparent",
   },
   notifSheet: {
     backgroundColor:"#1E2037",
