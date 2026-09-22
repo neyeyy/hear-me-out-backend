@@ -12,6 +12,7 @@ export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [studentId, setStudentId] = useState("");
   const [yearLevel, setYearLevel] = useState("");
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showPass, setShowPass] = useState(false);
@@ -20,11 +21,11 @@ export default function RegisterScreen({ navigation }) {
   const [error, setError] = useState("");
 
   const handleRegister = async () => {
-    if (!name || !email || !password) { setError("Please fill in all fields."); return; }
+    if (!name || !email || !password || !studentId) { setError("Please fill in all fields."); return; }
     setError("");
     try {
       setLoading(true);
-      const res = await API.post("/auth/register", { name, email, password, yearLevel });
+      const res = await API.post("/auth/register", { name, email, password, yearLevel, studentId });
       if (res.data.success) {
         navigation.navigate("Login");
       } else {
@@ -90,6 +91,24 @@ export default function RegisterScreen({ navigation }) {
                   onBlur={() => setFocusedField(null)}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  style={styles.input}
+                />
+              </View>
+            </View>
+
+            {/* Student ID */}
+            <View style={styles.group}>
+              <Text style={styles.label}>STUDENT ID</Text>
+              <View style={[styles.inputRow, focusedField === "studentId" && styles.inputRowFocused]}>
+                <Text style={styles.fieldIcon}>🪪</Text>
+                <TextInput
+                  placeholder="e.g. 24-0001"
+                  placeholderTextColor="#9CA3AF"
+                  value={studentId}
+                  onChangeText={setStudentId}
+                  onFocus={() => setFocusedField("studentId")}
+                  onBlur={() => setFocusedField(null)}
+                  autoCapitalize="characters"
                   style={styles.input}
                 />
               </View>

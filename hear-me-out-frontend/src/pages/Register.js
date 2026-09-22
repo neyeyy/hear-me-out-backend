@@ -6,6 +6,7 @@ export default function Register() {
   const [name,      setName]      = useState("");
   const [email,     setEmail]     = useState("");
   const [password,  setPassword]  = useState("");
+  const [studentId, setStudentId] = useState("");
   const [yearLevel, setYearLevel] = useState("");
   const [showPass,  setShowPass]  = useState(false);
   const [loading,   setLoading]   = useState(false);
@@ -14,11 +15,11 @@ export default function Register() {
   const navigate = useNavigate();
 
   const handleRegister = async () => {
-    if (!name || !email || !password) { setError("Please fill in all fields."); return; }
+    if (!name || !email || !password || !studentId) { setError("Please fill in all fields."); return; }
     setError("");
     try {
       setLoading(true);
-      const res = await API.post("/auth/register", { name, email, password, yearLevel });
+      const res = await API.post("/auth/register", { name, email, password, yearLevel, studentId });
       if (res.data.success) {
         navigate("/");
       } else {
@@ -30,9 +31,10 @@ export default function Register() {
   };
 
   const fields = [
-    { id:"name",  label:"Full name",      icon:"👤", type:"text",     ph:"Your full name",       val:name,     set:setName },
-    { id:"email", label:"Email address",  icon:"✉️", type:"email",    ph:"you@university.edu",   val:email,    set:setEmail },
-    { id:"pw",    label:"Password",       icon:"🔒", type:"password", ph:"Create a password",    val:password, set:setPassword },
+    { id:"name",  label:"Full name",      icon:"👤", type:"text",     ph:"Your full name",       val:name,      set:setName },
+    { id:"email", label:"Email address",  icon:"✉️", type:"email",    ph:"you@university.edu",   val:email,     set:setEmail },
+    { id:"sid",   label:"Student ID",     icon:"🪪", type:"text",     ph:"e.g. 24-0001",          val:studentId, set:setStudentId },
+    { id:"pw",    label:"Password",       icon:"🔒", type:"password", ph:"Create a password",    val:password,  set:setPassword },
   ];
 
   return (

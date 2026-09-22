@@ -77,6 +77,7 @@ export default function LoginScreen({ navigation }) {
         ["name", user.name || ""],
         ["email", user.email || ""],
         ["yearLevel", user.yearLevel || ""],
+        ["studentId", user.studentId || ""],
       ]);
       identify(user.id, user.role);
 

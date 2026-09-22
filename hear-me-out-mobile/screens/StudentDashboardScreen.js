@@ -87,6 +87,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [userName,     setUserName]    = useState("");
   const [userEmail,    setUserEmail]   = useState("");
   const [userYearLevel,setUserYearLevel]= useState("");
+  const [userStudentId,setUserStudentId]= useState("");
   const [userId,       setUserId]      = useState(null);
   const [appointment,  setAppt]        = useState(null);
   const [calKey,       setCalKey]      = useState(0);
@@ -151,12 +152,13 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   /* ─── init ── */
   useEffect(() => {
-    AsyncStorage.multiGet(["name","userId","email","yearLevel"]).then(pairs => {
+    AsyncStorage.multiGet(["name","userId","email","yearLevel","studentId"]).then(pairs => {
       const map = Object.fromEntries(pairs);
       setUserName(map.name || "");
       setUserEmail(map.email || "");
       setUserId(map.userId || null);
       setUserYearLevel(map.yearLevel || "");
+      setUserStudentId(map.studentId || "");
     });
     fetchAppointment();
     fetchHistory();
@@ -376,7 +378,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   /* ─── logout ── */
   const handleLogout = async () => {
     clearIdentity();
-    await AsyncStorage.multiRemove(["token","role","userId","name","email","yearLevel"]);
+    await AsyncStorage.multiRemove(["token","role","userId","name","email","yearLevel","studentId"]);
     navigation.replace("Login");
   };
 
@@ -949,7 +951,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
                   {[
                     { label: "Email",          val: userEmail || "—" },
-                    { label: "Student Number", val: "" }, // left blank for now
+                    { label: "Student Number", val: userStudentId || "—" },
                     { label: "Yr Level",       val: userYearLevel || "—" },
                   ].map((f, i) => (
                     <View key={i} style={s.pwGroup}>

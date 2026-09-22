@@ -6,8 +6,8 @@ const crypto = require('crypto');
 // REGISTER
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, yearLevel } = req.body || {};
-    if (!name || !email || !password)
+    const { name, email, password, yearLevel, studentId } = req.body || {};
+    if (!name || !email || !password || !studentId)
       return res.json({ success: false, message: "All fields are required" });
     if (password.length < 6)
       return res.json({ success: false, message: "Password must be at least 6 characters" });
@@ -23,6 +23,7 @@ exports.register = async (req, res) => {
       email: email.toLowerCase().trim(),
       password: hashedPassword,
       yearLevel: validYearLevels.includes(yearLevel) ? yearLevel : null,
+      studentId: studentId.trim(),
     });
 
     res.json({ success: true, message: "Registration successful" });
@@ -50,7 +51,7 @@ exports.login = async (req, res) => {
       success: true,
       message: "Login successful",
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, yearLevel: user.yearLevel || null },
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, yearLevel: user.yearLevel || null, studentId: user.studentId || null },
     });
   } catch (error) {
     res.json({ success: false, message: error.message });
