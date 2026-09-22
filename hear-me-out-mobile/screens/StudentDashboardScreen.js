@@ -126,6 +126,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [schedTime,      setSchedTime]      = useState("");
   const [schedLoading,   setSchedLoading]   = useState(false);
   const [schedErr,       setSchedErr]       = useState("");
+  const schedDrag = useDragToClose(() => setSchedModalOpen(false), schedModalOpen);
 
   // refs
   const prevApptRef   = useRef(null);
@@ -646,8 +647,10 @@ export default function StudentDashboardScreen({ navigation, route }) {
             activeOpacity={1}
             onPress={() => setSchedModalOpen(false)}
           />
-          <View style={s.schedSheet}>
-            <View style={s.sheetHandle} />
+          <Animated.View style={[s.schedSheet, { transform: [{ translateY: schedDrag.translateY }] }]}>
+            <View style={s.handleTouchArea} {...schedDrag.panHandlers}>
+              <View style={s.sheetHandle} />
+            </View>
             <View style={s.sheetHeader}>
               <Text style={s.sheetTitle}>Schedule Your Appointment</Text>
               <TouchableOpacity onPress={() => setSchedModalOpen(false)} style={s.schedCloseBtn}>
@@ -757,7 +760,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 </Text>
               </TouchableOpacity>
             </ScrollView>
-          </View>
+          </Animated.View>
         </Modal>
       </View>
     );

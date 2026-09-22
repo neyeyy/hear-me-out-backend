@@ -8,6 +8,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../services/api";
 import socket from "../services/socket";
+import useDragToClose from "../hooks/useDragToClose";
 
 // react-native's core SafeAreaView only applies inset padding on iOS — on
 // Android it's a no-op, so the header sat under/behind the status bar
@@ -33,6 +34,7 @@ export default function ChatScreen({ navigation }) {
   const [schedTime,       setSchedTime]      = useState("");
   const [schedLoading,    setSchedLoading]   = useState(false);
   const [schedErr,        setSchedErr]       = useState("");
+  const schedDrag = useDragToClose(() => setSchedModalOpen(false), schedModalOpen);
 
   const flatRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -404,8 +406,10 @@ export default function ChatScreen({ navigation }) {
           activeOpacity={1}
           onPress={() => setSchedModalOpen(false)}
         />
-        <View style={styles.schedSheet}>
-          <View style={styles.sheetHandle} />
+        <Animated.View style={[styles.schedSheet, { transform: [{ translateY: schedDrag.translateY }] }]}>
+          <View style={styles.handleTouchArea} {...schedDrag.panHandlers}>
+            <View style={styles.sheetHandle} />
+          </View>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Schedule Your Appointment</Text>
             <TouchableOpacity onPress={() => setSchedModalOpen(false)} style={styles.schedCloseBtn}>
@@ -511,7 +515,7 @@ export default function ChatScreen({ navigation }) {
               </Text>
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </Animated.View>
       </Modal>
     </SafeAreaView>
   );
@@ -636,6 +640,9 @@ const styles = StyleSheet.create({
     paddingTop:12,
     maxHeight:"88%",
     borderWidth:1, borderColor:"rgba(255,255,255,0.08)",
+  },
+  handleTouchArea: {
+    alignItems:"center", paddingVertical:8,
   },
   sheetHandle: {
     width:40, height:4, borderRadius:2,
