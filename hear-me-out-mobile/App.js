@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { identify } from "./services/socket";
 
 import LoginScreen            from "./screens/LoginScreen";
 import RegisterScreen         from "./screens/RegisterScreen";
@@ -47,11 +48,14 @@ export default function App() {
   useEffect(() => {
     async function restoreSession() {
       try {
-        const [token, role] = await Promise.all([
+        const [token, role, userId] = await Promise.all([
           AsyncStorage.getItem("token"),
           AsyncStorage.getItem("role"),
+          AsyncStorage.getItem("userId"),
         ]);
-        setHasSession(!!token && role === "student");
+        const valid = !!token && role === "student";
+        setHasSession(valid);
+        if (valid && userId) identify(userId, role);
       } catch (e) {
         // Storage unreadable — fall back to requiring login.
       } finally {

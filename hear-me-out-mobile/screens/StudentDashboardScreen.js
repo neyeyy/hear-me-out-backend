@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../services/api";
 import MoodCalendar from "../components/MoodCalendar";
 import useDragToClose from "../hooks/useDragToClose";
+import { clearIdentity } from "../services/socket";
 
 const LOGO = require("../assets/logo.png");
 
@@ -364,6 +365,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   /* ─── logout ── */
   const handleLogout = async () => {
+    clearIdentity();
     await AsyncStorage.multiRemove(["token","role","userId","name","email","yearLevel"]);
     navigation.replace("Login");
   };

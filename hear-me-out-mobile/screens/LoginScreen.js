@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../services/api";
+import { identify } from "../services/socket";
 
 const LOGO = require("../assets/logo.png");
 
@@ -77,6 +78,7 @@ export default function LoginScreen({ navigation }) {
         ["email", user.email || ""],
         ["yearLevel", user.yearLevel || ""],
       ]);
+      identify(user.id, user.role);
 
       if (user.role === "student") {
         try {

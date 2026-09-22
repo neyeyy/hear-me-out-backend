@@ -70,8 +70,61 @@ app.get('/', (req, res) => {
 });
 
 // SOCKET.IO
+
+// In-memory presence tracking — who's currently connected, and as what role.
+// A user can have multiple sockets open (e.g. two tabs/devices), so they only
+// go "offline" once their LAST socket disconnects.
+const onlineUsers = new Map(); // userId -> { role, sockets: Set<socketId> }
+const socketUserMap = new Map(); // socketId -> userId
+
+function broadcastOnlineList() {
+  const list = Array.from(onlineUsers.entries()).map(([userId, info]) => ({ userId, role: info.role }));
+  io.emit("onlineUsersList", list);
+}
+
+// Shared by both an explicit logout and a real disconnect — removes just
+// this one socket from presence tracking (a user can have several sockets
+// open, so this only clears their entry entirely once the last one is gone).
+function removeSocketPresence(socket) {
+  const userId = socketUserMap.get(socket.id);
+  if (!userId) return;
+  socketUserMap.delete(socket.id);
+  const info = onlineUsers.get(userId);
+  if (info) {
+    info.sockets.delete(socket.id);
+    if (info.sockets.size === 0) onlineUsers.delete(userId);
+  }
+  broadcastOnlineList();
+}
+
 io.on('connection', (socket) => {
   console.log("🟢 User connected:", socket.id);
+
+  socket.on('identify', ({ userId, role }) => {
+    if (!userId) return;
+    socketUserMap.set(socket.id, String(userId));
+    const existing = onlineUsers.get(String(userId));
+    if (existing) {
+      existing.sockets.add(socket.id);
+      if (role) existing.role = role;
+    } else {
+      onlineUsers.set(String(userId), { role, sockets: new Set([socket.id]) });
+    }
+    broadcastOnlineList();
+  });
+
+  // Sent on explicit logout — marks this socket offline right away instead
+  // of leaving it (and a stale "online" status) until the socket eventually
+  // disconnects, which matters if another account logs in on the same device.
+  socket.on('unidentify', () => removeSocketPresence(socket));
+
+  // A screen that just mounted needs the CURRENT list, not just future
+  // changes — the broadcast on identify/disconnect only reaches sockets
+  // that were already listening at that moment.
+  socket.on('getOnlineUsers', () => {
+    const list = Array.from(onlineUsers.entries()).map(([userId, info]) => ({ userId, role: info.role }));
+    socket.emit('onlineUsersList', list);
+  });
 
   socket.on('joinRoom', async (roomId) => {
     try {
@@ -132,6 +185,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log("🔴 User disconnected:", socket.id);
+    removeSocketPresence(socket);
   });
 });
 

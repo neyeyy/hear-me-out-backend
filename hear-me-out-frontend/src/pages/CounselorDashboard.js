@@ -117,6 +117,26 @@ export default function CounselorDashboard() {
     }
   }, [navigate]);
 
+  // Real online/offline presence — registers this counselor as online, and
+  // tracks everyone else's (students') live status for the chat header.
+  const [onlineUsers, setOnlineUsers] = useState([]); // [{ userId, role }]
+  useEffect(() => {
+    const counselorId = localStorage.getItem("userId");
+    if (counselorId) socket.emit("identify", { userId: counselorId, role: "counselor" });
+    socket.emit("getOnlineUsers");
+
+    const onOnlineList = (list) => setOnlineUsers(Array.isArray(list) ? list : []);
+    socket.on("onlineUsersList", onOnlineList);
+    socket.on("connect", () => {
+      if (counselorId) socket.emit("identify", { userId: counselorId, role: "counselor" });
+      socket.emit("getOnlineUsers");
+    });
+    return () => socket.off("onlineUsersList", onOnlineList);
+  }, []); // eslint-disable-line
+
+  const isStudentOnline = (studentId) =>
+    onlineUsers.some((u) => String(u.userId) === String(studentId) && u.role === "student");
+
   useEffect(() => {
     Promise.all([fetchStudents(), fetchAppointments(), fetchAnalytics()])
       .finally(() => setLoading(false));
@@ -450,6 +470,7 @@ export default function CounselorDashboard() {
   };
 
   const handleLogout = () => {
+    socket.emit("unidentify");
     ["token","role","userId","name","email"].forEach(k => localStorage.removeItem(k));
     navigate("/");
   };
@@ -1718,8 +1739,10 @@ export default function CounselorDashboard() {
                           <div style={s.msChatSub}>
                             {chatTyping ? (
                               <span style={{ color:"#5B6BD8" }}>typing…</span>
-                            ) : (
+                            ) : isStudentOnline(chatRoom) ? (
                               <span>● Online</span>
+                            ) : (
+                              <span style={{ color:"rgba(255,255,255,0.5)" }}>Offline</span>
                             )}
                           </div>
                         </div>

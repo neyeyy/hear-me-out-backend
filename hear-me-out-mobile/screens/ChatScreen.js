@@ -2,14 +2,12 @@ import { useEffect, useState, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   FlatList, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar,
-  Modal, ScrollView, ActivityIndicator,
+  Modal, ScrollView, ActivityIndicator, Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { io } from "socket.io-client";
 import API from "../services/api";
-
-const socket = io("https://hear-me-out-backend-production-8100.up.railway.app");
+import socket from "../services/socket";
 
 // react-native's core SafeAreaView only applies inset padding on iOS — on
 // Android it's a no-op, so the header sat under/behind the status bar
@@ -20,6 +18,7 @@ export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [counselorOnline, setCounselorOnline] = useState(false);
   const [userId, setUserId] = useState(null);
   const [roomId, setRoomId] = useState(null);
   const [reschedulingId, setReschedulingId] = useState(null);
@@ -37,6 +36,36 @@ export default function ChatScreen({ navigation }) {
 
   const flatRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+  const dotAnimRef = useRef(null);
+
+  // Bounce the three typing dots in a loop while isTyping is true, and
+  // reset them the moment it stops (an indefinite loop rather than a fixed
+  // number of iterations, since a real typing burst has no set length).
+  useEffect(() => {
+    if (isTyping) {
+      const bounce = (dot, delay) =>
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(dot, { toValue: -5, duration: 300, useNativeDriver: true }),
+              Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+            ])
+          ),
+        ]);
+      dotAnimRef.current = Animated.parallel([bounce(dot1, 0), bounce(dot2, 150), bounce(dot3, 300)]);
+      dotAnimRef.current.start();
+    } else {
+      dotAnimRef.current?.stop();
+      dot1.setValue(0);
+      dot2.setValue(0);
+      dot3.setValue(0);
+    }
+    return () => dotAnimRef.current?.stop();
+  }, [isTyping, dot1, dot2, dot3]);
 
   useEffect(() => {
     const init = async () => {
@@ -47,12 +76,19 @@ export default function ChatScreen({ navigation }) {
     };
 
     init();
+    socket.emit("getOnlineUsers");
 
     socket.on("loadMessages", (data) => setMessages(data));
     socket.on("receiveMessage", (data) => setMessages((prev) => [...prev, data]));
     socket.on("messagesSeen", (updatedMessages) => setMessages(updatedMessages));
     socket.on("typing", () => setIsTyping(true));
     socket.on("stopTyping", () => setIsTyping(false));
+    // Any counselor connected anywhere counts — students aren't shown which
+    // specific counselor they're paired with, so this reads as "is the
+    // Guidance Office currently reachable" rather than one person's status.
+    socket.on("onlineUsersList", (list) => {
+      setCounselorOnline(Array.isArray(list) && list.some((u) => u.role === "counselor"));
+    });
 
     return () => {
       socket.off("receiveMessage");
@@ -60,6 +96,7 @@ export default function ChatScreen({ navigation }) {
       socket.off("messagesSeen");
       socket.off("typing");
       socket.off("stopTyping");
+      socket.off("onlineUsersList");
     };
   }, []);
 
@@ -265,7 +302,7 @@ export default function ChatScreen({ navigation }) {
             <View>
               <Text style={styles.headerName}>Your Counselor</Text>
               <Text style={styles.headerStatus}>
-                {isTyping ? "Typing…" : "Online ●"}
+                {isTyping ? "Typing…" : counselorOnline ? "Online ●" : "Offline"}
               </Text>
             </View>
           </View>
@@ -300,7 +337,12 @@ export default function ChatScreen({ navigation }) {
               <Text style={{ fontSize: 12 }}>👨‍⚕️</Text>
             </View>
             <View style={styles.typingBubble}>
-              <Text style={styles.typingText}>Typing…</Text>
+              {[dot1, dot2, dot3].map((d, i) => (
+                <Animated.View
+                  key={i}
+                  style={[styles.typingDot, { transform: [{ translateY: d }] }]}
+                />
+              ))}
             </View>
           </View>
         )}
@@ -535,9 +577,13 @@ const styles = StyleSheet.create({
   typingBubble: {
     backgroundColor: "#fff", borderRadius: 14,
     borderBottomLeftRadius: 4,
-    paddingHorizontal: 12, paddingVertical: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
+    flexDirection: "row", alignItems: "center", gap: 5,
   },
-  typingText: { color: "#9CA3AF", fontSize: 12, fontStyle: "italic" },
+  typingDot: {
+    width: 7, height: 7, borderRadius: 3.5,
+    backgroundColor: "#9CA3AF",
+  },
   inputBar: {
     flexDirection: "row", alignItems: "center", gap: 10,
     padding: 12, backgroundColor: "#fff",
