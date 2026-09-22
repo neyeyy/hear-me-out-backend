@@ -84,6 +84,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [note,         setNote]        = useState("");
   const [userName,     setUserName]    = useState("");
   const [userEmail,    setUserEmail]   = useState("");
+  const [userYearLevel,setUserYearLevel]= useState("");
   const [userId,       setUserId]      = useState(null);
   const [appointment,  setAppt]        = useState(null);
   const [calKey,       setCalKey]      = useState(0);
@@ -139,11 +140,12 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   /* ─── init ── */
   useEffect(() => {
-    AsyncStorage.multiGet(["name","userId","email"]).then(pairs => {
+    AsyncStorage.multiGet(["name","userId","email","yearLevel"]).then(pairs => {
       const map = Object.fromEntries(pairs);
       setUserName(map.name || "");
       setUserEmail(map.email || "");
       setUserId(map.userId || null);
+      setUserYearLevel(map.yearLevel || "");
     });
     fetchAppointment();
     fetchHistory();
@@ -362,7 +364,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   /* ─── logout ── */
   const handleLogout = async () => {
-    await AsyncStorage.multiRemove(["token","role","userId","name","email"]);
+    await AsyncStorage.multiRemove(["token","role","userId","name","email","yearLevel"]);
     navigation.replace("Login");
   };
 
@@ -929,6 +931,24 @@ export default function StudentDashboardScreen({ navigation, route }) {
                   </View>
                 </View>
 
+                {/* Account information */}
+                <View style={s.profileCard}>
+                  <Text style={s.profileCardTitle}>Account Information</Text>
+
+                  {[
+                    { label: "Email",          val: userEmail || "—" },
+                    { label: "Student Number", val: "" }, // left blank for now
+                    { label: "Yr Level",       val: userYearLevel || "—" },
+                  ].map((f, i) => (
+                    <View key={i} style={s.pwGroup}>
+                      <Text style={s.pwLabel}>{f.label.toUpperCase()}</Text>
+                      <View style={s.infoBox}>
+                        <Text style={s.infoBoxText}>{f.val}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+
                 {/* Change password */}
                 <View style={s.profileCard}>
                   <Text style={s.profileCardTitle}>Change Password</Text>
@@ -1268,6 +1288,12 @@ const s = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 14 : 10,
     fontSize:15, color:"#fff",
   },
+  infoBox: {
+    backgroundColor:"rgba(255,255,255,0.05)",
+    borderRadius:14, borderWidth:1.5, borderColor:"rgba(255,255,255,0.1)",
+    paddingHorizontal:16, paddingVertical:14,
+  },
+  infoBoxText: { fontSize:15, color:"#fff" },
   pwBtn: { borderRadius:14, paddingVertical:16, alignItems:"center", marginTop:4, shadowColor:"#6C63FF", shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12, elevation:5 },
   pwBtnText: { color:"#fff", fontSize:15, fontWeight:"700" },
   logoutBtnLg: {

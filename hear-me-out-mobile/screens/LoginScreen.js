@@ -75,6 +75,7 @@ export default function LoginScreen({ navigation }) {
         ["userId", user.id],
         ["name", user.name || ""],
         ["email", user.email || ""],
+        ["yearLevel", user.yearLevel || ""],
       ]);
 
       if (user.role === "student") {
