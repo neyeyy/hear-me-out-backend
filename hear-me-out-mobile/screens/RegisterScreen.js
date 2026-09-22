@@ -46,7 +46,11 @@ export default function RegisterScreen({ navigation }) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.kav}
       >
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.card}>
             {/* Header */}
             <View style={styles.header}>
@@ -218,7 +222,12 @@ const styles = StyleSheet.create({
     left: -50,
   },
   kav: {
+    flex: 1,
     width: "100%",
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 24,
   },

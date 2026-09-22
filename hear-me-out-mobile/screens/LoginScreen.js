@@ -108,6 +108,11 @@ export default function LoginScreen({ navigation }) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.kav}
       >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.card}>
           {/* Header */}
           <View style={styles.header}>
@@ -222,6 +227,7 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Terms / Privacy Policy popup */}
@@ -278,8 +284,14 @@ const styles = StyleSheet.create({
     left: -60,
   },
   kav: {
+    flex: 1,
     width: "100%",
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
     paddingHorizontal: 24,
+    paddingVertical: 24,
   },
   card: {
     backgroundColor: "rgba(255,255,255,0.97)",

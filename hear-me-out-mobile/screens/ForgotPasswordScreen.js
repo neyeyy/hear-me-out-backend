@@ -76,7 +76,11 @@ export default function ForgotPasswordScreen({ navigation }) {
       <View style={s.blob1} />
       <View style={s.blob2} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.kav}>
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={s.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={s.card}>
 
             {step === "request" ? (
@@ -209,7 +213,8 @@ const s = StyleSheet.create({
   container: { flex:1, justifyContent:"center", alignItems:"center" },
   blob1: { position:"absolute", width:360, height:360, borderRadius:180, backgroundColor:"rgba(255,255,255,0.07)", top:-100, right:-100 },
   blob2: { position:"absolute", width:260, height:260, borderRadius:130, backgroundColor:"rgba(255,101,132,0.1)", bottom:-80, left:-60 },
-  kav: { width:"100%", paddingHorizontal:24, paddingVertical:24 },
+  kav: { flex:1, width:"100%" },
+  scrollContent: { flexGrow:1, justifyContent:"center", paddingHorizontal:24, paddingVertical:24 },
   card: { backgroundColor:"rgba(255,255,255,0.97)", borderRadius:28, padding:32, shadowColor:"#000", shadowOffset:{ width:0, height:16 }, shadowOpacity:0.22, shadowRadius:32, elevation:12 },
   header: { alignItems:"center", marginBottom:24 },
   logo: { fontSize:48, marginBottom:10 },
