@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet, Animated,
   ActivityIndicator, Modal, ScrollView, Platform,
 } from "react-native";
 import API from "../services/api";
+import useDragToClose from "../hooks/useDragToClose";
 
 const MOODS = {
   HAPPY:    { color: "#4ECDC4", emoji: "😊", label: "Happy" },
@@ -37,6 +38,7 @@ export default function MoodCalendar() {
   const [allMoods,     setAllMoods]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [selectedDay,  setSelectedDay]  = useState(null); // { day, entries[] }
+  const dayDrag = useDragToClose(() => setSelectedDay(null));
 
   useEffect(() => {
     API.get("/moods")
@@ -205,8 +207,10 @@ export default function MoodCalendar() {
           activeOpacity={1}
           onPress={() => setSelectedDay(null)}
         />
-        <View style={s.sheet}>
-          <View style={s.sheetHandle} />
+        <Animated.View style={[s.sheet, { transform: [{ translateY: dayDrag.translateY }] }]}>
+          <View style={s.handleTouchArea} {...dayDrag.panHandlers}>
+            <View style={s.sheetHandle} />
+          </View>
 
           {selectedDay && (
             <>
@@ -246,7 +250,7 @@ export default function MoodCalendar() {
               </ScrollView>
             </>
           )}
-        </View>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -411,13 +415,16 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
+  handleTouchArea: {
+    alignItems: "center",
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
   sheetHandle: {
     width: 40,
     height: 4,
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.2)",
-    alignSelf: "center",
-    marginBottom: 16,
   },
   sheetDate: {
     fontSize: 16,

@@ -8,6 +8,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../services/api";
 import MoodCalendar from "../components/MoodCalendar";
+import useDragToClose from "../hooks/useDragToClose";
 
 const LOGO = require("../assets/logo.png");
 
@@ -88,6 +89,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [calKey,       setCalKey]      = useState(0);
   const [notifications,setNotifs]      = useState([]);
   const [showNotif,    setShowNotif]   = useState(false);
+  const notifDrag = useDragToClose(() => setShowNotif(false));
 
   // profile
   const [curPw,    setCurPw]    = useState("");
@@ -579,8 +581,10 @@ export default function StudentDashboardScreen({ navigation, route }) {
             activeOpacity={1}
             onPress={() => setShowNotif(false)}
           />
-          <View style={s.notifSheet}>
-            <View style={s.sheetHandle} />
+          <Animated.View style={[s.notifSheet, { transform: [{ translateY: notifDrag.translateY }] }]}>
+            <View style={s.handleTouchArea} {...notifDrag.panHandlers}>
+              <View style={s.sheetHandle} />
+            </View>
             <View style={s.sheetHeader}>
               <Text style={s.sheetTitle}>Notifications</Text>
               {notifications.length > 0 && (
@@ -611,7 +615,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 ))}
               </ScrollView>
             )}
-          </View>
+          </Animated.View>
         </Modal>
 
         {/* Schedule Appointment Modal */}
@@ -1088,6 +1092,9 @@ const s = StyleSheet.create({
     paddingHorizontal:20,
     paddingTop:12,
     borderWidth:1, borderColor:"rgba(255,255,255,0.08)",
+  },
+  handleTouchArea: {
+    alignItems:"center", paddingVertical:8,
   },
   sheetHandle: {
     width:40, height:4, borderRadius:2,
