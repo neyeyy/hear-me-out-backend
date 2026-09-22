@@ -75,7 +75,7 @@ export default function ForgotPasswordScreen({ navigation }) {
     <LinearGradient colors={["#667eea", "#764ba2"]} style={s.container}>
       <View style={s.blob1} />
       <View style={s.blob2} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={s.kav}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.kav}>
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={s.card}>
 

@@ -903,7 +903,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
           <SafeAreaView style={{ flex:1 }}>
             <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
               style={{ flex:1 }}
             >
               <ScrollView

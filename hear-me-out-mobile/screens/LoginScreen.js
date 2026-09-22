@@ -103,7 +103,7 @@ export default function LoginScreen({ navigation }) {
       <View style={styles.blob2} />
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.kav}
       >
         <View style={styles.card}>

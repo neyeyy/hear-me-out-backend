@@ -251,7 +251,7 @@ export default function ChatScreen({ navigation }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: "#6C63FF" }}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         <LinearGradient colors={["#6C63FF", "#764ba2"]} style={styles.header}>
