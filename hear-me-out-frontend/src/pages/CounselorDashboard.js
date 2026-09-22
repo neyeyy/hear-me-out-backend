@@ -440,6 +440,18 @@ export default function CounselorDashboard() {
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
+  const formatRelativeTime = (ts) => {
+    if (!ts) return "";
+    const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
   const openReschedule = (appt) => {
     const current = appt.scheduleDate ? new Date(appt.scheduleDate) : new Date();
     const yyyy = current.getFullYear();
@@ -1777,12 +1789,20 @@ export default function CounselorDashboard() {
                                 {chatStudent?.name?.[0]?.toUpperCase() || "🎓"}
                               </div>
                             )}
-                            <div style={isMe ? s.msMyBubble : s.msTheirBubble}>
-                              <span style={s.msMsgText}>{msg.message}</span>
-                              <div style={s.msMsgMeta}>
-                                <span>{new Date(msg.createdAt).toLocaleTimeString([],{ hour:"2-digit", minute:"2-digit" })}</span>
-                                {isMe && isLast && <span style={{ marginLeft:"4px" }}>{msg.seen ? "✓✓" : "✓"}</span>}
+                            <div>
+                              <div style={isMe ? s.msMyBubble : s.msTheirBubble}>
+                                <span style={s.msMsgText}>{msg.message}</span>
+                                <div style={s.msMsgMeta}>
+                                  <span>{new Date(msg.createdAt).toLocaleTimeString([],{ hour:"2-digit", minute:"2-digit" })}</span>
+                                </div>
                               </div>
+                              {isMe && isLast && (
+                                <div style={{ fontSize:"11px", color:"#A8AECB", textAlign:"right", marginTop:"3px", marginRight:"4px" }}>
+                                  {msg.seen
+                                    ? `Seen ${formatRelativeTime(msg.seenAt || msg.createdAt)}`
+                                    : `Sent ${formatRelativeTime(msg.createdAt)}`}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );

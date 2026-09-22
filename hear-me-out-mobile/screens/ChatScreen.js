@@ -136,6 +136,18 @@ export default function ChatScreen({ navigation }) {
     return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  const formatRelativeTime = (ts) => {
+    if (!ts) return "";
+    const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
   // Recognize the two automated notices and what action/label each takes
   const getSystemAction = (item) => {
     if (item.senderId !== "system") return null;
@@ -257,16 +269,22 @@ export default function ChatScreen({ navigation }) {
               <Text style={{ fontSize: 14 }}>👨‍⚕️</Text>
             </View>
           )}
-          <View style={isMe ? styles.myBubble : styles.theirBubble}>
-            <Text style={isMe ? styles.myBubbleText : styles.theirBubbleText}>
-              {item.message}
-            </Text>
-            <View style={styles.metaRow}>
-              <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
-              {isMe && isLast && (
-                <Text style={styles.seenText}>{item.seen ? " ✓✓" : " ✓"}</Text>
-              )}
+          <View>
+            <View style={isMe ? styles.myBubble : styles.theirBubble}>
+              <Text style={isMe ? styles.myBubbleText : styles.theirBubbleText}>
+                {item.message}
+              </Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
+              </View>
             </View>
+            {isMe && isLast && (
+              <Text style={styles.statusText}>
+                {item.seen
+                  ? `Seen ${formatRelativeTime(item.seenAt || item.createdAt)}`
+                  : `Sent ${formatRelativeTime(item.createdAt)}`}
+              </Text>
+            )}
           </View>
         </View>
         {showAction && (
@@ -568,7 +586,7 @@ const styles = StyleSheet.create({
   rescheduleBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   metaRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 4 },
   timeText: { fontSize: 9, opacity: 0.65, color: "inherit" },
-  seenText: { fontSize: 9, opacity: 0.65 },
+  statusText: { fontSize: 11, color: "#9CA3AF", textAlign: "right", marginTop: 3, marginRight: 4 },
   typingRow: {
     flexDirection: "row", alignItems: "center",
     gap: 6, paddingHorizontal: 14, paddingBottom: 6,

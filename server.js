@@ -165,7 +165,7 @@ io.on('connection', (socket) => {
           senderId: { $ne: String(userId) },
           seen:     false
         },
-        { seen: true }
+        { seen: true, seenAt: new Date() }
       );
       const updatedMessages = await Message.find({ roomId: String(roomId) })
         .sort({ createdAt: 1 });
