@@ -38,7 +38,7 @@ export default function MoodCalendar() {
   const [allMoods,     setAllMoods]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [selectedDay,  setSelectedDay]  = useState(null); // { day, entries[] }
-  const dayDrag = useDragToClose(() => setSelectedDay(null));
+  const dayDrag = useDragToClose(() => setSelectedDay(null), !!selectedDay);
 
   useEffect(() => {
     API.get("/moods")

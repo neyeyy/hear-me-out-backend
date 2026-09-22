@@ -89,7 +89,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [calKey,       setCalKey]      = useState(0);
   const [notifications,setNotifs]      = useState([]);
   const [showNotif,    setShowNotif]   = useState(false);
-  const notifDrag = useDragToClose(() => setShowNotif(false));
+  const notifDrag = useDragToClose(() => setShowNotif(false), showNotif);
 
   // profile
   const [curPw,    setCurPw]    = useState("");
