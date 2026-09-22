@@ -30,16 +30,24 @@ export default function App() {
   // behavior — which is easy to mistake for updates not working at all.
   useEffect(() => {
     async function applyLatestUpdate() {
-      if (__DEV__) return;
+      if (__DEV__) {
+        await AsyncStorage.setItem("lastUpdateCheck", JSON.stringify({ at: Date.now(), result: "skipped (dev mode)" }));
+        return;
+      }
       try {
         const { isAvailable } = await Updates.checkForUpdateAsync();
         if (isAvailable) {
+          await AsyncStorage.setItem("lastUpdateCheck", JSON.stringify({ at: Date.now(), result: "found update, downloading…" }));
           await Updates.fetchUpdateAsync();
-          await Updates.reloadAsync();
+          await Updates.reloadAsync(); // app restarts here — nothing after this line runs
+        } else {
+          await AsyncStorage.setItem("lastUpdateCheck", JSON.stringify({ at: Date.now(), result: "already up to date" }));
         }
       } catch (e) {
         // No network, no update server reachable, etc. — continue with
-        // whatever bundle is already installed.
+        // whatever bundle is already installed, but record why so it's
+        // visible on the Profile screen instead of failing invisibly.
+        await AsyncStorage.setItem("lastUpdateCheck", JSON.stringify({ at: Date.now(), result: `error: ${e?.message || e}` }));
       }
     }
     applyLatestUpdate();

@@ -6,6 +6,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Updates from "expo-updates";
 import API from "../services/api";
 import MoodCalendar from "../components/MoodCalendar";
 import useDragToClose from "../hooks/useDragToClose";
@@ -99,6 +100,15 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [conPw,    setConPw]    = useState("");
   const [pwLoad,   setPwLoad]   = useState(false);
   const [pwMsg,    setPwMsg]    = useState({ text:"", ok:false });
+  const [lastCheckInfo, setLastCheckInfo] = useState(null);
+
+  useEffect(() => {
+    if (step === "profile") {
+      AsyncStorage.getItem("lastUpdateCheck")
+        .then(raw => { if (raw) setLastCheckInfo(JSON.parse(raw)); })
+        .catch(() => {});
+    }
+  }, [step]);
 
   // cancel + history
   const [history,        setHistory]        = useState([]);
@@ -997,6 +1007,18 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 <TouchableOpacity onPress={handleLogout} style={s.logoutBtnLg}>
                   <Text style={s.logoutLgText}>🚪 Sign out</Text>
                 </TouchableOpacity>
+
+                {/* Build/update info — lets us confirm exactly what's running on this device */}
+                <Text style={s.versionFooter}>
+                  {Updates.isEmbeddedLaunch
+                    ? "Running the version bundled with this install (no update applied yet)"
+                    : `Updated: ${Updates.createdAt ? new Date(Updates.createdAt).toLocaleString("en-US",{ month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "unknown"} · ${(Updates.updateId || "").slice(0, 8)}`}
+                </Text>
+                {!!lastCheckInfo && (
+                  <Text style={s.versionFooter}>
+                    Last check: {new Date(lastCheckInfo.at).toLocaleString("en-US",{ month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })} — {lastCheckInfo.result}
+                  </Text>
+                )}
               </ScrollView>
             </KeyboardAvoidingView>
           </SafeAreaView>
@@ -1302,6 +1324,10 @@ const s = StyleSheet.create({
     borderRadius:16, paddingVertical:16, alignItems:"center",
     backgroundColor:"rgba(248,113,113,0.1)",
     borderWidth:1, borderColor:"rgba(248,113,113,0.25)",
+  },
+  versionFooter: {
+    marginTop:16, textAlign:"center",
+    fontSize:11, color:"rgba(255,255,255,0.25)",
   },
   logoutLgText: { fontSize:15, fontWeight:"700", color:"#F87171" },
 
