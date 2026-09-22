@@ -98,6 +98,7 @@ export default function CounselorDashboard() {
   const toastTimerRef    = useRef(null);
   const notifSeenRef     = useRef(new Set(JSON.parse(localStorage.getItem("notifSeen") || "[]")));
   const lastKnownUnreadRef = useRef({});
+  const chatNotifInitRef = useRef(false);
   const chatEndRef       = useRef(null);
   const chatRoomRef      = useRef(null);
   const schedInitRef     = useRef(false);
@@ -308,12 +309,28 @@ export default function CounselorDashboard() {
 
   // Detect new unread chat messages and push to notifications panel
   const checkChatNotifications = useCallback(() => {
+    // The first run after a page load/refresh has no prior state to compare
+    // against — without this guard, every pre-existing unread conversation
+    // (some possibly days old) looked "new" and got stamped "just now".
+    // Just seed the baseline silently instead of notifying on all of them.
+    // (Waits for conversations to actually have loaded — the empty initial
+    // render would otherwise "seed" nothing and re-trigger this same check
+    // once real data arrives.)
+    if (!chatNotifInitRef.current) {
+      if (conversations.length === 0) return;
+      chatNotifInitRef.current = true;
+      conversations.forEach(conv => { lastKnownUnreadRef.current[conv.roomId] = conv.unread; });
+      return;
+    }
+
     conversations.forEach(conv => {
       const prev = lastKnownUnreadRef.current[conv.roomId] || 0;
       if (conv.unread > prev) {
         const key = `chat_${conv.roomId}_${Date.now()}`;
+        // addedAt reflects when the message actually arrived (conv.lastAt),
+        // not when this poll happened to notice it, so "X ago" stays accurate.
         const chatNotif = { id: key, kind: "chat", name: conv.studentName, roomId: conv.roomId,
-          unreadCount: conv.unread, lastMessage: conv.lastMessage, addedAt: new Date() };
+          unreadCount: conv.unread, lastMessage: conv.lastMessage, addedAt: conv.lastAt ? new Date(conv.lastAt) : new Date() };
         setNotifs(p => [chatNotif, ...p.filter(n => !(n.kind === "chat" && n.roomId === conv.roomId))]);
         showToast(chatNotif);
       }
