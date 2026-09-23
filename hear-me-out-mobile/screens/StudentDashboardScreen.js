@@ -643,7 +643,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
           onRequestClose={() => setSchedModalOpen(false)}
         >
           <TouchableOpacity
-            style={s.modalOverlay}
+            style={s.noBgOverlay}
             activeOpacity={1}
             onPress={() => setSchedModalOpen(false)}
           />

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal, ScrollView,
+  Keyboard, Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -9,6 +10,7 @@ import API from "../services/api";
 import { identify } from "../services/socket";
 
 const LOGO = require("../assets/logo.png");
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 const TERMS_TEXT = `Last updated: 2026
 
@@ -56,6 +58,18 @@ export default function LoginScreen({ navigation }) {
   const [error, setError] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [activeDoc, setActiveDoc] = useState(null); // "terms" | "privacy" | null
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Small card at rest; while the keyboard is open the card grows to fill
+  // the screen so scrolling reveals more of it smoothly, instead of a
+  // fixed-size box with the background peeking around it mid-scroll.
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const onHide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) { setError("Please enter your email and password."); return; }
@@ -114,7 +128,7 @@ export default function LoginScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-        <View style={styles.card}>
+        <View style={[styles.card, keyboardVisible && styles.cardExpanded]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={{
@@ -303,6 +317,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 32,
     elevation: 12,
+  },
+  // While the keyboard is open, stretch to fill the screen instead of
+  // staying a small fixed box — scrolling then just reveals more of one
+  // continuous white surface, with no background peeking through mid-scroll.
+  cardExpanded: {
+    minHeight: SCREEN_HEIGHT - 120,
+    borderRadius: 20,
   },
   header: {
     alignItems: "center",

@@ -402,7 +402,7 @@ export default function ChatScreen({ navigation }) {
         onRequestClose={() => setSchedModalOpen(false)}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={styles.noBgOverlay}
           activeOpacity={1}
           onPress={() => setSchedModalOpen(false)}
         />
@@ -632,6 +632,10 @@ const styles = StyleSheet.create({
 
   /* ── Schedule Appointment modal ── */
   modalOverlay: { flex:1, backgroundColor:"rgba(0,0,0,0.55)" },
+  // Same tappable full-screen area as modalOverlay, but with no dark dimming —
+  // used behind sheets with a drag-to-dismiss handle, since a static overlay
+  // looked disconnected from the sheet sliding away underneath it.
+  noBgOverlay: { flex:1, backgroundColor:"transparent" },
   schedSheet: {
     backgroundColor:"#181830",
     borderTopLeftRadius:28, borderTopRightRadius:28,

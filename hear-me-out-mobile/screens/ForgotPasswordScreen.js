@@ -1,10 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  Keyboard, Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [step,    setStep]    = useState("request"); // "request" | "code"
@@ -18,6 +21,18 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [success, setSuccess] = useState(false);
   const [focused, setFocused] = useState(null);
   const [generatedCode, setGeneratedCode] = useState("");
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Small card at rest; while the keyboard is open the card grows to fill
+  // the screen so scrolling reveals more of it smoothly, instead of a
+  // fixed-size box with the background peeking around it mid-scroll.
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const onHide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
 
   const handleRequest = async () => {
     if (!email) { setError("Please enter your email."); return; }
@@ -81,7 +96,7 @@ export default function ForgotPasswordScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={s.card}>
+          <View style={[s.card, keyboardVisible && s.cardExpanded]}>
 
             {step === "request" ? (
               <>
@@ -216,6 +231,7 @@ const s = StyleSheet.create({
   kav: { flex:1, width:"100%" },
   scrollContent: { flexGrow:1, justifyContent:"center", paddingHorizontal:24, paddingVertical:24 },
   card: { backgroundColor:"rgba(255,255,255,0.97)", borderRadius:28, padding:32, shadowColor:"#000", shadowOffset:{ width:0, height:16 }, shadowOpacity:0.22, shadowRadius:32, elevation:12 },
+  cardExpanded: { minHeight: SCREEN_HEIGHT - 120, borderRadius: 20 },
   header: { alignItems:"center", marginBottom:24 },
   logo: { fontSize:48, marginBottom:10 },
   title: { fontSize:24, fontWeight:"800", color:"#1A1A2E", letterSpacing:-0.5, marginBottom:4, textAlign:"center" },

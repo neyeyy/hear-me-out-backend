@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Modal,
+  Keyboard, Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
 
 const YEAR_LEVELS = ["Grade 11", "Grade 12", "1st Year", "2nd Year", "3rd Year", "4th Year"];
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState("");
@@ -19,6 +21,18 @@ export default function RegisterScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
   const [error, setError] = useState("");
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Small card at rest; while the keyboard is open the card grows to fill
+  // the screen so scrolling reveals more of it smoothly, instead of a
+  // fixed-size box with the background peeking around it mid-scroll.
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const onHide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
 
   const handleRegister = async () => {
     if (!name || !email || !password || !studentId) { setError("Please fill in all fields."); return; }
@@ -52,7 +66,7 @@ export default function RegisterScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.card}>
+          <View style={[styles.card, keyboardVisible && styles.cardExpanded]}>
             {/* Header */}
             <View style={styles.header}>
               <Text style={styles.logo}>🌱</Text>
@@ -259,6 +273,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 32,
     elevation: 12,
+  },
+  cardExpanded: {
+    minHeight: SCREEN_HEIGHT - 120,
+    borderRadius: 20,
   },
   header: {
     alignItems: "center",
