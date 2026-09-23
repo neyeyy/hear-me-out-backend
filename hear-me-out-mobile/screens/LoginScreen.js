@@ -290,9 +290,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "center",
+    justifyContent: "flex-start",
     paddingHorizontal: 24,
-    paddingVertical: 24,
+    paddingTop: 72,
+    paddingBottom: 24,
   },
   card: {
     backgroundColor: "rgba(255,255,255,0.97)",
