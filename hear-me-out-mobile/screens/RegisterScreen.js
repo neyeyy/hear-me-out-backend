@@ -47,12 +47,12 @@ export default function RegisterScreen({ navigation }) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.kav}
       >
-        <View style={styles.sheet}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          <View style={styles.card}>
             {/* Header */}
             <View style={styles.header}>
               <Text style={styles.logo}>🌱</Text>
@@ -180,8 +180,8 @@ export default function RegisterScreen({ navigation }) {
                 <Text style={styles.link}>Sign in</Text>
               </TouchableOpacity>
             </View>
+          </View>
         </ScrollView>
-        </View>
       </KeyboardAvoidingView>
 
       {/* Year Level picker */}
@@ -244,23 +244,21 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
-  sheet: {
-    flex: 1,
-    marginTop: 40,
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 12,
-  },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingTop: 32,
-    paddingBottom: 32,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+  },
+  card: {
+    backgroundColor: "rgba(255,255,255,0.97)",
+    borderRadius: 28,
+    padding: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.22,
+    shadowRadius: 32,
+    elevation: 12,
   },
   header: {
     alignItems: "center",

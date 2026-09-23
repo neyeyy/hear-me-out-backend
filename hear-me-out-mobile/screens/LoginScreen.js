@@ -109,12 +109,12 @@ export default function LoginScreen({ navigation }) {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.kav}
       >
-        <View style={styles.sheet}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+        <View style={styles.card}>
           {/* Header */}
           <View style={styles.header}>
             <View style={{
@@ -227,8 +227,8 @@ export default function LoginScreen({ navigation }) {
               <Text style={styles.link}>Forgot password?</Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Terms / Privacy Policy popup */}
@@ -288,26 +288,21 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
-  // A tall sheet that fills nearly the whole screen, rather than a small
-  // floating card — so the keyboard opening just reveals more of it via
-  // scroll, instead of a small box jumping/resizing around on screen.
-  sheet: {
-    flex: 1,
-    marginTop: 48,
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 12,
-  },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 28,
-    paddingTop: 36,
-    paddingBottom: 32,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+  },
+  card: {
+    backgroundColor: "rgba(255,255,255,0.97)",
+    borderRadius: 28,
+    padding: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.22,
+    shadowRadius: 32,
+    elevation: 12,
   },
   header: {
     alignItems: "center",
