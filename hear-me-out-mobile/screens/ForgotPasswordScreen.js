@@ -76,12 +76,12 @@ export default function ForgotPasswordScreen({ navigation }) {
       <View style={s.blob1} />
       <View style={s.blob2} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.kav}>
+        <View style={s.sheet}>
         <ScrollView
           contentContainerStyle={s.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={s.card}>
 
             {step === "request" ? (
               <>
@@ -202,8 +202,8 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <Text style={s.link}>Sign in</Text>
               </TouchableOpacity>
             </View>
-          </View>
         </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -214,7 +214,12 @@ const s = StyleSheet.create({
   blob1: { position:"absolute", width:360, height:360, borderRadius:180, backgroundColor:"rgba(255,255,255,0.07)", top:-100, right:-100 },
   blob2: { position:"absolute", width:260, height:260, borderRadius:130, backgroundColor:"rgba(255,101,132,0.1)", bottom:-80, left:-60 },
   kav: { flex:1, width:"100%" },
-  scrollContent: { flexGrow:1, justifyContent:"flex-start", paddingHorizontal:24, paddingTop:72, paddingBottom:24 },
+  sheet: {
+    flex:1, marginTop:48, backgroundColor:"#fff",
+    borderTopLeftRadius:32, borderTopRightRadius:32,
+    shadowColor:"#000", shadowOffset:{ width:0, height:-8 }, shadowOpacity:0.15, shadowRadius:24, elevation:12,
+  },
+  scrollContent: { flexGrow:1, paddingHorizontal:28, paddingTop:36, paddingBottom:32 },
   card: { backgroundColor:"rgba(255,255,255,0.97)", borderRadius:28, padding:32, shadowColor:"#000", shadowOffset:{ width:0, height:16 }, shadowOpacity:0.22, shadowRadius:32, elevation:12 },
   header: { alignItems:"center", marginBottom:24 },
   logo: { fontSize:48, marginBottom:10 },
