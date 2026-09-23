@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  Platform, ActivityIndicator, ScrollView,
   Keyboard, Dimensions,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
 
@@ -90,12 +92,15 @@ export default function ForgotPasswordScreen({ navigation }) {
     <LinearGradient colors={["#667eea", "#764ba2"]} style={s.container}>
       <View style={s.blob1} />
       <View style={s.blob2} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.kav}>
-        <ScrollView
-          contentContainerStyle={s.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <KeyboardAwareScrollView
+        style={s.kav}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={24}
+        keyboardOpeningTime={0}
+      >
           <View style={[s.card, keyboardVisible && s.cardExpanded]}>
 
             {step === "request" ? (
@@ -109,7 +114,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <View style={s.group}>
                   <Text style={s.label}>EMAIL ADDRESS</Text>
                   <View style={[s.inputRow, focused === "email" && s.inputRowFocused]}>
-                    <Text style={s.icon}>✉️</Text>
+                    <Ionicons name="mail-outline" size={18} color="#6C63FF" style={s.iconVec} />
                     <TextInput
                       placeholder="you@university.edu"
                       placeholderTextColor="#9CA3AF"
@@ -167,7 +172,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <View style={s.group}>
                   <Text style={s.label}>NEW PASSWORD</Text>
                   <View style={[s.inputRow, focused === "pw" && s.inputRowFocused]}>
-                    <Text style={s.icon}>🔒</Text>
+                    <Ionicons name="lock-closed-outline" size={18} color="#6C63FF" style={s.iconVec} />
                     <TextInput
                       placeholder="Min. 6 characters"
                       placeholderTextColor="#9CA3AF"
@@ -179,7 +184,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                       style={[s.input, { flex:1 }]}
                     />
                     <TouchableOpacity onPress={() => setShowPw(!showPw)} style={s.eye}>
-                      <Text>{showPw ? "🙈" : "👁️"}</Text>
+                      <Ionicons name={showPw ? "eye-off-outline" : "eye-outline"} size={18} color="#9CA3AF" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -187,7 +192,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <View style={s.group}>
                   <Text style={s.label}>CONFIRM PASSWORD</Text>
                   <View style={[s.inputRow, focused === "cpw" && s.inputRowFocused]}>
-                    <Text style={s.icon}>🔒</Text>
+                    <Ionicons name="lock-closed-outline" size={18} color="#6C63FF" style={s.iconVec} />
                     <TextInput
                       placeholder="Re-enter password"
                       placeholderTextColor="#9CA3AF"
@@ -218,8 +223,7 @@ export default function ForgotPasswordScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </LinearGradient>
   );
 }
@@ -241,6 +245,7 @@ const s = StyleSheet.create({
   inputRow: { flexDirection:"row", alignItems:"center", backgroundColor:"#F9FAFB", borderRadius:14, borderWidth:2, borderColor:"#E5E7EB", paddingHorizontal:14, paddingVertical: Platform.OS === "ios" ? 14 : 2 },
   inputRowFocused: { borderColor:"#6C63FF", backgroundColor:"#FAFBFF" },
   icon: { fontSize:17, marginRight:10 },
+  iconVec: { marginRight:10 },
   input: { flex:1, fontSize:15, color:"#1A1A2E", paddingVertical: Platform.OS === "android" ? 10 : 0 },
   eye: { padding:4 },
   error: { color:"#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 },

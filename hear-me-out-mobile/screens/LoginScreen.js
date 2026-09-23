@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Image, Modal, ScrollView,
+  Platform, ActivityIndicator, Image, Modal, ScrollView,
   Keyboard, Dimensions,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../services/api";
@@ -119,15 +121,15 @@ export default function LoginScreen({ navigation }) {
       <View style={styles.blob1} />
       <View style={styles.blob2} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScrollView
         style={styles.kav}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid
+        extraScrollHeight={24}
+        keyboardOpeningTime={0}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
         <View style={[styles.card, keyboardVisible && styles.cardExpanded]}>
           {/* Header */}
           <View style={styles.header}>
@@ -147,7 +149,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.group}>
             <Text style={styles.label}>EMAIL ADDRESS</Text>
             <View style={[styles.inputRow, focusedField === "email" && styles.inputRowFocused]}>
-              <Text style={styles.fieldIcon}>✉️</Text>
+              <Ionicons name="mail-outline" size={18} color="#6C63FF" style={styles.fieldIconVec} />
               <TextInput
                 placeholder="you@university.edu"
                 placeholderTextColor="#9CA3AF"
@@ -166,7 +168,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.group}>
             <Text style={styles.label}>PASSWORD</Text>
             <View style={[styles.inputRow, focusedField === "password" && styles.inputRowFocused]}>
-              <Text style={styles.fieldIcon}>🔒</Text>
+              <Ionicons name="lock-closed-outline" size={18} color="#6C63FF" style={styles.fieldIconVec} />
               <TextInput
                 placeholder="••••••••"
                 placeholderTextColor="#9CA3AF"
@@ -178,7 +180,7 @@ export default function LoginScreen({ navigation }) {
                 style={[styles.input, { flex: 1 }]}
               />
               <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eye}>
-                <Text>{showPass ? "🙈" : "👁️"}</Text>
+                <Ionicons name={showPass ? "eye-off-outline" : "eye-outline"} size={18} color="#9CA3AF" />
               </TouchableOpacity>
             </View>
           </View>
@@ -242,8 +244,7 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       {/* Terms / Privacy Policy popup */}
       <Modal
@@ -366,6 +367,9 @@ const styles = StyleSheet.create({
   },
   fieldIcon: {
     fontSize: 17,
+    marginRight: 10,
+  },
+  fieldIconVec: {
     marginRight: 10,
   },
   input: {

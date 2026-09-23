@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView, Modal,
+  Platform, ActivityIndicator, ScrollView, Modal,
   Keyboard, Dimensions,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
 
@@ -57,15 +59,15 @@ export default function RegisterScreen({ navigation }) {
       <View style={styles.blob1} />
       <View style={styles.blob2} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAwareScrollView
         style={styles.kav}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={24}
+        keyboardOpeningTime={0}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
           <View style={[styles.card, keyboardVisible && styles.cardExpanded]}>
             {/* Header */}
             <View style={styles.header}>
@@ -78,7 +80,7 @@ export default function RegisterScreen({ navigation }) {
             <View style={styles.group}>
               <Text style={styles.label}>FULL NAME</Text>
               <View style={[styles.inputRow, focusedField === "name" && styles.inputRowFocused]}>
-                <Text style={styles.fieldIcon}>👤</Text>
+                <Ionicons name="person-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
                   placeholder="Your full name"
                   placeholderTextColor="#9CA3AF"
@@ -95,7 +97,7 @@ export default function RegisterScreen({ navigation }) {
             <View style={styles.group}>
               <Text style={styles.label}>EMAIL ADDRESS</Text>
               <View style={[styles.inputRow, focusedField === "email" && styles.inputRowFocused]}>
-                <Text style={styles.fieldIcon}>✉️</Text>
+                <Ionicons name="mail-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
                   placeholder="you@university.edu"
                   placeholderTextColor="#9CA3AF"
@@ -114,7 +116,7 @@ export default function RegisterScreen({ navigation }) {
             <View style={styles.group}>
               <Text style={styles.label}>STUDENT ID</Text>
               <View style={[styles.inputRow, focusedField === "studentId" && styles.inputRowFocused]}>
-                <Text style={styles.fieldIcon}>🪪</Text>
+                <Ionicons name="card-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
                   placeholder="e.g. 24-0001"
                   placeholderTextColor="#9CA3AF"
@@ -132,7 +134,7 @@ export default function RegisterScreen({ navigation }) {
             <View style={styles.group}>
               <Text style={styles.label}>PASSWORD</Text>
               <View style={[styles.inputRow, focusedField === "password" && styles.inputRowFocused]}>
-                <Text style={styles.fieldIcon}>🔒</Text>
+                <Ionicons name="lock-closed-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
                   placeholder="••••••••"
                   placeholderTextColor="#9CA3AF"
@@ -144,7 +146,7 @@ export default function RegisterScreen({ navigation }) {
                   style={[styles.input, { flex: 1 }]}
                 />
                 <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eye}>
-                  <Text>{showPass ? "🙈" : "👁️"}</Text>
+                  <Ionicons name={showPass ? "eye-off-outline" : "eye-outline"} size={18} color="#9CA3AF" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -157,7 +159,7 @@ export default function RegisterScreen({ navigation }) {
                 style={[styles.inputRow, showYearPicker && styles.inputRowFocused]}
                 activeOpacity={0.75}
               >
-                <Text style={styles.fieldIcon}>🎓</Text>
+                <Ionicons name="school-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <Text style={[styles.input, !yearLevel && { color: "#9CA3AF" }]}>
                   {yearLevel || "Select year level"}
                 </Text>
@@ -195,8 +197,7 @@ export default function RegisterScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       {/* Year Level picker */}
       <Modal
@@ -323,6 +324,9 @@ const styles = StyleSheet.create({
   },
   fieldIcon: {
     fontSize: 17,
+    marginRight: 10,
+  },
+  fieldIconVec: {
     marginRight: 10,
   },
   input: {
