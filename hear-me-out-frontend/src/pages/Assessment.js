@@ -138,7 +138,6 @@ function Assessment() {
       simulateTyping(() => {
         addBotMessage(`PHQ-9 (depression) score: ${res.data.phq9Score}/27 — ${formatBand(res.data.phq9Severity)}`);
         addBotMessage(`GAD-7 (anxiety) score: ${res.data.gad7Score}/21 — ${formatBand(res.data.gad7Severity)}`);
-        addBotMessage("ℹ️ This is a screening result, not a clinical diagnosis. Only a licensed mental health professional can diagnose a mental health condition — think of this as a starting point for a conversation, not a label.");
 
         if (res.data.severity === "HIGH") {
           addBotMessage("⚠️ We recommend immediate counseling.");
@@ -164,6 +163,12 @@ function Assessment() {
   };
 
   const goToDashboard = () => navigate("/student");
+
+  const severityColor = result
+    ? result.severity === "HIGH" ? "#FF6B6B"
+    : result.severity === "MEDIUM" ? "#FFB347"
+    : "#4ECDC4"
+    : "#6C63FF";
 
   return (
     <div style={s.page}>
@@ -198,28 +203,9 @@ function Assessment() {
             <div style={s.welcomeIcon}>🧠</div>
             <h2 style={s.welcomeTitle}>Mental Health Check‑in</h2>
             <p style={s.welcomeText}>
-              This check-in uses two validated clinical screening tools — PHQ-9 for depression
-              and GAD-7 for anxiety — to help you and your counselor understand how you've been feeling.
+              A PHQ-9 and GAD-7 assessment to understand how you're feeling.
+              Your answers are private and help us support you better.
             </p>
-
-            <div style={s.infoCard}>
-              <div style={s.infoCardTitle}>💡 Why this matters</div>
-              <p style={s.infoCardText}>
-                Stress, anxiety, and low mood can build up gradually, and it's easy to not notice
-                how much they're affecting you. Checking in regularly helps catch these signs early,
-                so the Guidance Office can offer support before things become harder to manage.
-              </p>
-            </div>
-
-            <div style={s.infoCard}>
-              <div style={s.infoCardTitle}>🩺 Why PHQ-9 and GAD-7?</div>
-              <p style={s.infoCardText}>
-                PHQ-9 and GAD-7 are internationally recognized questionnaires used by healthcare
-                providers worldwide to screen for symptoms of depression and anxiety. They're quick,
-                evidence-based, and among the most trusted tools for early detection.
-              </p>
-            </div>
-
             <div style={s.pillRow}>
               <span style={s.pill}>🕐 ~5 min</span>
               <span style={s.pill}>🔒 Private</span>
@@ -228,12 +214,6 @@ function Assessment() {
             <button onClick={handleStart} style={s.startBtn}>
               Begin Assessment →
             </button>
-
-            <p style={s.disclaimerText}>
-              This is a screening tool, not a diagnostic one. Your results do not mean you are
-              being diagnosed with any condition — only a licensed mental health professional
-              can provide a diagnosis.
-            </p>
           </div>
         ) : (
           <>
@@ -306,6 +286,9 @@ function Assessment() {
               </div>
             ) : (
               <div style={s.resultPanel}>
+                <div style={{ ...s.severityBadge, background: severityColor }}>
+                  {result.severity} RISK
+                </div>
                 <button onClick={goToDashboard} style={s.continueBtn}>
                   Go to Dashboard →
                 </button>
@@ -402,7 +385,6 @@ const s = {
     padding: "32px 28px",
     textAlign: "center",
     background: "#FAFBFF",
-    overflowY: "auto",
   },
   welcomeIcon: {
     fontSize: "64px",
@@ -420,36 +402,7 @@ const s = {
     fontSize: "15px",
     color: "#7B7F9E",
     lineHeight: 1.65,
-    marginBottom: "18px",
-  },
-  infoCard: {
-    width: "100%",
-    background: "#EEF0FD",
-    borderRadius: "14px",
-    padding: "14px 16px",
-    marginBottom: "12px",
-    textAlign: "left",
-  },
-  infoCardTitle: {
-    fontSize: "13px",
-    fontWeight: "800",
-    color: "#2D3047",
-    marginBottom: "5px",
-    fontFamily: "'Poppins',sans-serif",
-  },
-  infoCardText: {
-    fontSize: "13px",
-    color: "#5B6178",
-    lineHeight: 1.55,
-    margin: 0,
-  },
-  disclaimerText: {
-    fontSize: "11px",
-    color: "#A8AECB",
-    lineHeight: 1.5,
-    marginTop: "16px",
-    marginBottom: 0,
-    padding: "0 8px",
+    marginBottom: "24px",
   },
   pillRow: {
     display: "flex",
@@ -568,6 +521,14 @@ const s = {
     flexDirection: "column",
     alignItems: "center",
     gap: "12px",
+  },
+  severityBadge: {
+    padding: "8px 24px",
+    borderRadius: "99px",
+    color: "white",
+    fontWeight: "800",
+    fontSize: "14px",
+    letterSpacing: "0.05em",
   },
   continueBtn: {
     width: "100%",
