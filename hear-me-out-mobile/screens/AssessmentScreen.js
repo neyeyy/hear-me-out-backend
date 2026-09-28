@@ -162,6 +162,7 @@ export default function AssessmentScreen({ navigation }) {
       simulateTyping(() => {
         addBotMessage(`PHQ-9 (depression) score: ${res.data.phq9Score}/27 — ${formatBand(res.data.phq9Severity)}`);
         addBotMessage(`GAD-7 (anxiety) score: ${res.data.gad7Score}/21 — ${formatBand(res.data.gad7Severity)}`);
+        addBotMessage("ℹ️ This is a screening result, not a clinical diagnosis. Only a licensed mental health professional can diagnose a mental health condition — think of this as a starting point for a conversation, not a label.");
         if (res.data.severity === "HIGH") {
           addBotMessage("⚠️ We recommend immediate counseling.");
         }
@@ -186,11 +187,6 @@ export default function AssessmentScreen({ navigation }) {
     }
   };
 
-  const severityColor =
-    result?.severity === "HIGH" ? "#FF6B6B"
-    : result?.severity === "MEDIUM" ? "#FFB347"
-    : "#4ECDC4";
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#6C63FF" }}>
       <View style={styles.container}>
@@ -212,13 +208,35 @@ export default function AssessmentScreen({ navigation }) {
 
         {/* Welcome or Chat area */}
         {!started ? (
-          <View style={styles.welcome}>
+          <ScrollView
+            style={{ flex: 1, backgroundColor: "#FAFBFF" }}
+            contentContainerStyle={styles.welcome}
+            showsVerticalScrollIndicator={false}
+          >
             <Text style={styles.welcomeIcon}>🧠</Text>
             <Text style={styles.welcomeTitle}>Mental Health Check-in</Text>
             <Text style={styles.welcomeText}>
-              A PHQ-9 and GAD-7 assessment to understand how you're feeling.
-              Your answers are completely private.
+              This check-in uses two validated clinical screening tools — PHQ-9 for depression
+              and GAD-7 for anxiety — to help you and your counselor understand how you've been feeling.
             </Text>
+
+            <View style={styles.infoCard}>
+              <Text style={styles.infoCardTitle}>💡 Why this matters</Text>
+              <Text style={styles.infoCardText}>
+                Stress, anxiety, and low mood can build up gradually, and it's easy to not notice
+                how much they're affecting you. Checking in regularly helps catch these signs early,
+                so the Guidance Office can offer support before things become harder to manage.
+              </Text>
+            </View>
+
+            <View style={styles.infoCard}>
+              <Text style={styles.infoCardTitle}>🩺 Why PHQ-9 and GAD-7?</Text>
+              <Text style={styles.infoCardText}>
+                PHQ-9 and GAD-7 are internationally recognized questionnaires used by healthcare
+                providers worldwide to screen for symptoms of depression and anxiety. They're quick,
+                evidence-based, and among the most trusted tools for early detection.
+              </Text>
+            </View>
 
             <View style={styles.pillRow}>
               {["🕐 ~5 min", "🔒 Private", "💙 16 Qs"].map((p) => (
@@ -233,7 +251,13 @@ export default function AssessmentScreen({ navigation }) {
                 <Text style={styles.startBtnText}>Begin Assessment →</Text>
               </LinearGradient>
             </TouchableOpacity>
-          </View>
+
+            <Text style={styles.disclaimerText}>
+              This is a screening tool, not a diagnostic one. Your results do not mean you are
+              being diagnosed with any condition — only a licensed mental health professional
+              can provide a diagnosis.
+            </Text>
+          </ScrollView>
         ) : (
           <>
             {/* Messages */}
@@ -303,9 +327,6 @@ export default function AssessmentScreen({ navigation }) {
               </View>
             ) : (
               <View style={styles.resultBar}>
-                <View style={[styles.severityBadge, { backgroundColor: severityColor }]}>
-                  <Text style={styles.severityText}>{result.severity} RISK</Text>
-                </View>
                 <TouchableOpacity
                   onPress={() => navigation.replace("Dashboard", { step: "dashboard" })}
                   activeOpacity={0.85}
@@ -349,11 +370,10 @@ const styles = StyleSheet.create({
   progress: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600" },
 
   welcome: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 32,
-    backgroundColor: "#FAFBFF",
   },
   welcomeIcon: { fontSize: 64, marginBottom: 20 },
   welcomeTitle: {
@@ -368,7 +388,33 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     textAlign: "center",
     lineHeight: 22,
-    marginBottom: 24,
+    marginBottom: 20,
+  },
+  infoCard: {
+    width: "100%",
+    backgroundColor: "#EEF2FF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+  },
+  infoCardTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#1A1A2E",
+    marginBottom: 6,
+  },
+  infoCardText: {
+    fontSize: 13,
+    color: "#5B6178",
+    lineHeight: 19,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    textAlign: "center",
+    lineHeight: 16,
+    marginTop: 16,
+    paddingHorizontal: 8,
   },
   pillRow: {
     flexDirection: "row",
@@ -495,12 +541,6 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: "center",
   },
-  severityBadge: {
-    borderRadius: 99,
-    paddingHorizontal: 24,
-    paddingVertical: 8,
-  },
-  severityText: { color: "#fff", fontWeight: "800", fontSize: 13, letterSpacing: 0.8 },
   continueBtn: {
     borderRadius: 14,
     paddingVertical: 14,
