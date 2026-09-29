@@ -172,8 +172,7 @@ export default function AssessmentScreen({ navigation }) {
       setResult(res.data);
 
       simulateTyping(() => {
-        addBotMessage(`PHQ-9 score: ${res.data.phq9Score}/27`);
-        addBotMessage(`GAD-7 score: ${res.data.gad7Score}/21`);
+        addBotMessage("✅ Thanks for completing the check-in.");
         addBotMessage("ℹ️ This is a screening result, not a clinical diagnosis. Only a licensed mental health professional can diagnose a mental health condition — think of this as a starting point for a conversation, not a label.");
         if (res.data.severity === "HIGH") {
           addBotMessage("⚠️ We recommend immediate counseling.");
