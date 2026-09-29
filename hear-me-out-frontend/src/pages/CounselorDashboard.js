@@ -597,11 +597,26 @@ export default function CounselorDashboard() {
     : null;
   const ovStatsSource    = ovStudentApptMap ? Object.values(ovStudentApptMap) : Object.values(appointments);
   const ovPending         = ovStatsSource.filter(a => a.status === "PENDING").length;
-  const ovDone            = ovStatsSource.filter(a => a.status === "DONE").length;
   // "Active" = still in the pipeline — scheduled or in progress, not yet
   // done/missed/cancelled. (ONGOING is never actually set by the app today,
   // so in practice this equals the pending count, but stays correct if that changes.)
   const ovActiveCount     = ovStatsSource.filter(a => a.status === "PENDING" || a.status === "ONGOING").length;
+
+  // Students counted as "done" — anyone with AT LEAST ONE completed (DONE)
+  // appointment in scope, even if they've since been booked again (e.g. after
+  // a monthly reassessment) and their MOST RECENT appointment isn't Done.
+  // ovStatsSource above only reflects each student's latest appointment, so
+  // it can't be used here — it would drop students exactly like that.
+  const ovDoneStudentIds = new Set(
+    apptList
+      .filter(a => a.studentId && a.status === "DONE" &&
+        (!ovFilterRange || (a.scheduleDate &&
+          new Date(a.scheduleDate) >= ovFilterRange.start &&
+          new Date(a.scheduleDate) <= ovFilterRange.end)))
+      .map(a => (typeof a.studentId === "object" ? a.studentId._id : a.studentId))
+  );
+  const ovDone = ovDoneStudentIds.size;
+
   // Completion rate is done students out of the FULL student roster (not just
   // students who happen to have a pending/done appointment) — e.g. "3 of 39".
   const ovCompletionRate  = total > 0 ? Math.round(ovDone / total * 100) : 0;
