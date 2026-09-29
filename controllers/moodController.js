@@ -2,7 +2,7 @@ const Mood = require('../models/Mood');
 const Appointment = require('../models/Appointment');
 const Assessment = require('../models/Assessment');
 
-/* ── Scheduling helpers (Mon–Fri, 9–11:30 and 13–15:30, no lunch) ── */
+/* ── Scheduling helpers (Mon–Sat, 9–11:30 and 13–15:30, no lunch; Sunday closed) ── */
 const TIME_SLOTS = [
   { h: 9,  m: 0  }, { h: 9,  m: 30 },
   { h: 10, m: 0  }, { h: 10, m: 30 },
@@ -12,10 +12,14 @@ const TIME_SLOTS = [
   { h: 15, m: 0  }, { h: 15, m: 30 },
 ];
 
+// Hard cap on how many students can be scheduled in a single day.
+const MAX_APPTS_PER_DAY = 4;
+
+// Advance Sunday → Monday. Saturday is a regular office day (a counselor is
+// in on Saturdays), so it's left alone.
 function skipToWeekday(date) {
   const d = new Date(date);
   const dow = d.getDay();
-  if (dow === 6) d.setDate(d.getDate() + 2);
   if (dow === 0) d.setDate(d.getDate() + 1);
   return d;
 }
@@ -44,11 +48,13 @@ async function findNextAvailableSlot(daysFromNow) {
       })
     );
 
-    for (const slot of TIME_SLOTS) {
-      if (!booked.has(`${slot.h}:${slot.m}`)) {
-        const result = new Date(candidate);
-        result.setHours(slot.h, slot.m, 0, 0);
-        return result;
+    if (existing.length < MAX_APPTS_PER_DAY) {
+      for (const slot of TIME_SLOTS) {
+        if (!booked.has(`${slot.h}:${slot.m}`)) {
+          const result = new Date(candidate);
+          result.setHours(slot.h, slot.m, 0, 0);
+          return result;
+        }
       }
     }
 
@@ -136,7 +142,7 @@ exports.createMood = async (req, res) => {
       if (severity === "HIGH") assignedTo = "Guidance Counselor";
       else if (severity === "MEDIUM") assignedTo = "Review Needed";
 
-      // 📅 Schedule date — proper Mon–Fri slot
+      // 📅 Schedule date — proper Mon–Sat slot
       const daysOut = severity === "HIGH" ? 1 : severity === "MEDIUM" ? 3 : 5;
       const scheduleDate = await findNextAvailableSlot(daysOut);
 

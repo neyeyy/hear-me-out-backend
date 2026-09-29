@@ -3,8 +3,9 @@ const Appointment = require("../models/Appointment");
 const User = require("../models/User");
 
 /* ── Scheduling helpers ──────────────────────────────────────
-   Office hours: Mon–Fri, 9:00–11:30 and 13:00–15:30 (30-min slots)
+   Office hours: Mon–Sat, 9:00–11:30 and 13:00–15:30 (30-min slots)
    Lunch break:  12:00–12:59 → no appointments
+   Sunday: closed. Max 4 students booked per day.
 ─────────────────────────────────────────────────────────────── */
 const TIME_SLOTS = [
   { h: 9,  m: 0  }, { h: 9,  m: 30 },
@@ -15,12 +16,27 @@ const TIME_SLOTS = [
   { h: 15, m: 0  }, { h: 15, m: 30 },
 ];
 
+// Hard cap on how many students can be scheduled in a single day, regardless
+// of how many individual time slots are technically still open.
+const MAX_APPTS_PER_DAY = 4;
+
+// Advance Sunday → Monday. Saturday is a regular office day (a counselor is
+// in on Saturdays), so it's left alone.
 function skipToWeekday(date) {
   const d = new Date(date);
   const dow = d.getDay();
-  if (dow === 6) d.setDate(d.getDate() + 2);
   if (dow === 0) d.setDate(d.getDate() + 1);
   return d;
+}
+
+// How many students already have an active appointment on this calendar day?
+async function countActiveApptsOnDay(date) {
+  const dayStart = new Date(date); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd   = new Date(date); dayEnd.setHours(23, 59, 59, 999);
+  return Appointment.countDocuments({
+    scheduleDate: { $gte: dayStart, $lte: dayEnd },
+    status: { $in: ['PENDING', 'ONGOING'] },
+  });
 }
 
 // Session length by severity — a more severe case gets a longer session.
@@ -95,11 +111,14 @@ async function findNextAvailableSlot(daysFromNow, durationMinutes = 30) {
   candidate = skipToWeekday(candidate);
 
   for (let attempt = 0; attempt < 30; attempt++) {
-    for (const slot of TIME_SLOTS) {
-      if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
-      const result = new Date(candidate);
-      result.setHours(slot.h, slot.m, 0, 0);
-      if (!(await hasOverlap(result, durationMinutes))) return result;
+    const dayFull = (await countActiveApptsOnDay(candidate)) >= MAX_APPTS_PER_DAY;
+    if (!dayFull) {
+      for (const slot of TIME_SLOTS) {
+        if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
+        const result = new Date(candidate);
+        result.setHours(slot.h, slot.m, 0, 0);
+        if (!(await hasOverlap(result, durationMinutes))) return result;
+      }
     }
 
     candidate.setDate(candidate.getDate() + 1);
@@ -118,7 +137,8 @@ async function findNextAvailableSlot(daysFromNow, durationMinutes = 30) {
 // Returns null if today is a weekend, already past office hours, or fully booked.
 async function findNextAvailableSlotToday(durationMinutes = 30) {
   const now = new Date();
-  if (now.getDay() === 0 || now.getDay() === 6) return null; // weekend
+  if (now.getDay() === 0) return null; // Sunday, closed
+  if ((await countActiveApptsOnDay(now)) >= MAX_APPTS_PER_DAY) return null; // day fully booked
 
   for (const slot of TIME_SLOTS) {
     if (!slotFitsOfficeHours(slot, durationMinutes)) continue;

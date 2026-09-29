@@ -10,7 +10,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const Message = require('./models/Message');
-const { checkMissedAppointments, checkVacancyOffers } = require('./controllers/appointmentController');
+const { checkMissedAppointments, checkStartingAppointments, checkVacancyOffers } = require('./controllers/appointmentController');
 
 const app = express();
 const server = http.createServer(app);
@@ -192,6 +192,10 @@ io.on('connection', (socket) => {
 // Expire missed appointments + notify students on a recurring sweep
 setInterval(() => checkMissedAppointments(io), 5 * 60 * 1000);
 checkMissedAppointments(io);
+
+// Alert students the moment their appointment time arrives (grace-period notice)
+setInterval(() => checkStartingAppointments(io), 60 * 1000);
+checkStartingAppointments(io);
 
 // Offer today's open slots to tomorrow's students once the PM session starts
 setInterval(() => checkVacancyOffers(io), 30 * 60 * 1000);

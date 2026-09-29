@@ -189,7 +189,7 @@ export default function ChatScreen({ navigation }) {
   const toDateStr = (d) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const startOfToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
-  const isSelectableDay = (d) => { const dow = d.getDay(); return dow !== 0 && dow !== 6 && d >= startOfToday(); };
+  const isSelectableDay = (d) => { const dow = d.getDay(); return dow !== 0 && d >= startOfToday(); }; // Sunday closed; Saturday has a counselor in
   const getMonthGrid = (monthDate) => {
     const year = monthDate.getFullYear(), month = monthDate.getMonth();
     const firstDow = new Date(year, month, 1).getDay();

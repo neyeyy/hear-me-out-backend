@@ -158,7 +158,7 @@ export default function StudentDashboard() {
 
   const isSelectableDay = (d) => {
     const dow = d.getDay();
-    return dow !== 0 && dow !== 6 && d >= startOfToday();
+    return dow !== 0 && d >= startOfToday(); // Sunday closed; Saturday has a counselor in
   };
 
   // Full month grid: leading blanks so the 1st lands on its real weekday, then every day in the month

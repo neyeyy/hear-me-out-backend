@@ -48,6 +48,7 @@ const SCHED_SLOTS = [
   { label: "3:30 PM",  value: "15:30" },
 ];
 
+// Mon–Sat (6 days) — Saturday has a counselor in, Sunday is closed.
 function getWeekDates(offset) {
   const today = new Date();
   const dow = today.getDay();
@@ -55,7 +56,7 @@ function getWeekDates(offset) {
   const monday = new Date(today);
   monday.setDate(today.getDate() + diffToMon + offset * 7);
   monday.setHours(0, 0, 0, 0);
-  return Array.from({ length: 5 }, (_, i) => {
+  return Array.from({ length: 6 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d;
@@ -486,7 +487,7 @@ export default function CounselorDashboard() {
   const handleReschedule = async () => {
     if (!rescheduleDate || !rescheduleTime) return;
     const dow = new Date(rescheduleDate + "T00:00:00").getDay();
-    if (dow === 0 || dow === 6) { setRescheduleErr("Please select a weekday (Mon–Fri)."); return; }
+    if (dow === 0) { setRescheduleErr("Please select Monday–Saturday."); return; }
     setRescheduleErr("");
     try {
       setRescheduling(true);
@@ -1056,7 +1057,7 @@ export default function CounselorDashboard() {
             {(() => {
               const ovDates = getWeekDates(ovWeekOffset);
               const ovStart = ovDates[0].toLocaleDateString("en-US", { month: "short", day: "numeric" });
-              const ovEnd   = ovDates[4].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+              const ovEnd   = ovDates[5].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
               const isToday = (d) => d.toDateString() === new Date().toDateString();
 
               const ovSameDay = (d, day) =>
@@ -1529,7 +1530,7 @@ export default function CounselorDashboard() {
         {tab === "schedule" && (() => {
           const weekDates = getWeekDates(weekOffset);
           const weekStart = weekDates[0].toLocaleDateString("en-US", { month: "short", day: "numeric" });
-          const weekEnd   = weekDates[4].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const weekEnd   = weekDates[5].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
           const sameDay = (d, day) =>
             d.getFullYear() === day.getFullYear() &&
@@ -1701,7 +1702,7 @@ export default function CounselorDashboard() {
                       </div>
                     )}
                     <div style={s.modalGroup}>
-                      <label style={s.modalLabel}>New Date <span style={{ color:"#A8AECB", fontWeight:"400" }}>(Mon–Fri only)</span></label>
+                      <label style={s.modalLabel}>New Date <span style={{ color:"#A8AECB", fontWeight:"400" }}>(Mon–Sat only)</span></label>
                       <input
                         type="date"
                         value={rescheduleDate}
@@ -2614,7 +2615,7 @@ const s = {
     boxShadow: "0 2px 8px rgba(91,107,216,0.25)",
   },
   ovCalRow: {
-    display: "flex", borderBottom: "1px solid #F0F2F8", minWidth: "500px",
+    display: "flex", borderBottom: "1px solid #F0F2F8", minWidth: "600px",
   },
   ovTimeCol: {
     width: "68px", flexShrink: 0,
@@ -2640,7 +2641,7 @@ const s = {
     fontSize: "10px", fontWeight: "600",
     fontFamily: "'Poppins',sans-serif",
     borderBottom: "1px solid #F0F2F8",
-    minWidth: "500px",
+    minWidth: "600px",
   },
   ovChip: {
     width: "100%", padding: "4px 6px",

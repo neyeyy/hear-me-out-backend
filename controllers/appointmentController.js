@@ -3,18 +3,23 @@ const Assessment = require('../models/Assessment');
 const Message = require('../models/Message');
 
 // How long past the scheduled time a PENDING appointment is given before
-// it's considered missed (matches the 30-min slot length).
-const MISSED_GRACE_MINUTES = 30;
+// it's considered missed.
+const MISSED_GRACE_MINUTES = 15;
+
+// Hard cap on how many students can be scheduled in a single day, regardless
+// of how many individual time slots are technically still open.
+const MAX_APPTS_PER_DAY = 4;
 
 // "Second half of the day" = the PM session start (office hours are
 // 9:00–11:30 AM / 1:00–3:30 PM, split by the 12–1 PM lunch break).
 const VACANCY_CHECK_HOUR = 13;
 
 /* ── Scheduling helpers ──────────────────────────────────────
-   Office hours: Mon–Fri, 9:00–11:30 and 13:00–15:30 (30-min slots)
+   Office hours: Mon–Sat, 9:00–11:30 and 13:00–15:30 (30-min slots)
    Lunch break:  12:00–12:59 → no appointments
+   Sunday: closed. Max 4 students booked per day.
 ─────────────────────────────────────────────────────────────── */
-/* Valid 30-min slots: Mon–Fri, 9:00–11:30, then 13:00–15:30 (12:00–12:59 = lunch) */
+/* Valid 30-min slots: Mon–Sat, 9:00–11:30, then 13:00–15:30 (12:00–12:59 = lunch) */
 const TIME_SLOTS = [
   { h: 9,  m: 0  }, { h: 9,  m: 30 },
   { h: 10, m: 0  }, { h: 10, m: 30 },
@@ -34,13 +39,25 @@ function durationFor(severity) { return DURATION_BY_SEVERITY[severity] || 30; }
 // silently treating them as a 30-min LOW session.
 function effectiveDuration(appt) { return appt.durationMinutes || durationFor(appt.severity); }
 
-// Advance Saturday → Monday, Sunday → Monday
+// Advance Sunday → Monday. Saturday is a regular office day (a counselor is
+// in on Saturdays), so it's left alone.
 function skipToWeekday(date) {
   const d = new Date(date);
   const dow = d.getDay();
-  if (dow === 6) d.setDate(d.getDate() + 2);
   if (dow === 0) d.setDate(d.getDate() + 1);
   return d;
+}
+
+// How many students already have an active appointment on this calendar day?
+async function countActiveApptsOnDay(date, excludeApptId) {
+  const dayStart = new Date(date); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd   = new Date(date); dayEnd.setHours(23, 59, 59, 999);
+  const query = {
+    scheduleDate: { $gte: dayStart, $lte: dayEnd },
+    status: { $in: ['PENDING', 'ONGOING'] },
+  };
+  if (excludeApptId) query._id = { $ne: excludeApptId };
+  return Appointment.countDocuments(query);
 }
 
 // A slot must not run into the 12–1 PM lunch break or past the 4 PM close.
@@ -86,14 +103,17 @@ async function findNextAvailableSlot(daysFromNow, durationMinutes = 30) {
   candidate = skipToWeekday(candidate); // re-check after adding days
 
   for (let attempt = 0; attempt < 30; attempt++) {
-    for (const slot of TIME_SLOTS) {
-      if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
-      const result = new Date(candidate);
-      result.setHours(slot.h, slot.m, 0, 0);
-      if (!(await hasOverlap(result, durationMinutes))) return result;
+    const dayFull = (await countActiveApptsOnDay(candidate)) >= MAX_APPTS_PER_DAY;
+    if (!dayFull) {
+      for (const slot of TIME_SLOTS) {
+        if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
+        const result = new Date(candidate);
+        result.setHours(slot.h, slot.m, 0, 0);
+        if (!(await hasOverlap(result, durationMinutes))) return result;
+      }
     }
 
-    // All slots taken (or too short) on this day — advance to next workday
+    // Day is full (or all slots taken/too short) — advance to next workday
     candidate.setDate(candidate.getDate() + 1);
     candidate = skipToWeekday(candidate);
   }
@@ -110,7 +130,8 @@ async function findNextAvailableSlot(daysFromNow, durationMinutes = 30) {
 // Returns null if today is a weekend, already past office hours, or fully booked.
 async function findNextAvailableSlotToday(durationMinutes = 30) {
   const now = new Date();
-  if (now.getDay() === 0 || now.getDay() === 6) return null; // weekend
+  if (now.getDay() === 0) return null; // Sunday, closed
+  if ((await countActiveApptsOnDay(now)) >= MAX_APPTS_PER_DAY) return null; // day fully booked
 
   for (const slot of TIME_SLOTS) {
     if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
@@ -123,12 +144,12 @@ async function findNextAvailableSlotToday(durationMinutes = 30) {
 }
 
 // Validate a manually-set schedule date
-// Rules: Mon–Fri only, 9:00 AM – 3:59 PM, no 12:xx (lunch), must be :00 or :30,
+// Rules: Mon–Sat only, 9:00 AM – 3:59 PM, no 12:xx (lunch), must be :00 or :30,
 // and the session (durationMinutes long) must not cross lunch or run past close.
 function isValidScheduleSlot(date, durationMinutes = 30) {
   const d   = new Date(date);
   const dow = d.getDay();
-  if (dow === 0 || dow === 6) return false;   // weekend
+  if (dow === 0) return false;   // Sunday, closed
 
   const h = d.getHours();
   const m = d.getMinutes();
@@ -160,7 +181,7 @@ exports.getAvailableSlots = async (req, res) => {
     const latestAssessment = await Assessment.findOne({ studentId: req.user.id }).sort({ createdAt: -1 });
     const durationMinutes = durationFor(latestAssessment?.severity);
 
-    if (day.getDay() === 0 || day.getDay() === 6) {
+    if (day.getDay() === 0) {
       return res.json({
         success: true,
         date,
@@ -180,6 +201,7 @@ exports.getAvailableSlots = async (req, res) => {
       scheduleDate: { $gte: dayStart, $lte: dayEnd },
       status: { $in: ["PENDING", "ONGOING"] },
     });
+    const dayFull = existing.length >= MAX_APPTS_PER_DAY;
 
     const now = new Date();
     const slots = TIME_SLOTS.map(sl => {
@@ -195,11 +217,11 @@ exports.getAvailableSlots = async (req, res) => {
       return {
         value: `${String(sl.h).padStart(2, "0")}:${String(sl.m).padStart(2, "0")}`,
         label: formatSlotLabel(sl.h, sl.m),
-        available: fits && slotDate > now && !overlaps,
+        available: fits && slotDate > now && !overlaps && !dayFull,
       };
     });
 
-    res.json({ success: true, date, durationMinutes, slots });
+    res.json({ success: true, date, durationMinutes, slots, dayFull });
   } catch (error) {
     res.json({ success: false, message: error.message });
   }
@@ -356,6 +378,9 @@ exports.createAppointment = async (req, res) => {
       }
       if (await hasOverlap(d, durationMinutes)) {
         return res.json({ success: false, message: "Sorry, that slot was just taken. Please pick another." });
+      }
+      if ((await countActiveApptsOnDay(d)) >= MAX_APPTS_PER_DAY) {
+        return res.json({ success: false, message: "That day is fully booked (max 4 students). Please pick another date." });
       }
       scheduleDate = d;
     } else {
@@ -528,10 +553,13 @@ exports.updateAppointmentStatus = async (req, res) => {
         return res.json({ success: false, message: "Invalid date" });
       }
       if (!isValidScheduleSlot(d, durationMinutes)) {
-        return res.json({ success: false, message: `Must be a weekday (Mon–Fri), 9 AM–4 PM, outside the 12–1 PM lunch break, on a 30-minute mark, and fit the student's ${durationMinutes}-minute session without crossing lunch or closing time.` });
+        return res.json({ success: false, message: `Must be Monday–Saturday, 9 AM–4 PM, outside the 12–1 PM lunch break, on a 30-minute mark, and fit the student's ${durationMinutes}-minute session without crossing lunch or closing time.` });
       }
       if (await hasOverlap(d, durationMinutes, id)) {
         return res.json({ success: false, message: "That slot overlaps another appointment. Please pick another." });
+      }
+      if ((await countActiveApptsOnDay(d, id)) >= MAX_APPTS_PER_DAY) {
+        return res.json({ success: false, message: "That day is fully booked (max 4 students). Please pick another date." });
       }
       update.scheduleDate = d;
     }
@@ -594,13 +622,47 @@ exports.checkMissedAppointments = async (io) => {
 };
 
 
+// ⏰ SWEEP: alert a student the moment their appointment time arrives, and
+// remind them of the grace period before it's marked missed.
+// Runs on an interval from server.js (needs `io` to push the chat message live).
+exports.checkStartingAppointments = async (io) => {
+  try {
+    const now = new Date();
+
+    const starting = await Appointment.find({
+      status: "PENDING",
+      scheduleDate: { $lte: now },
+      startAlertSentAt: null,
+    });
+
+    for (const appt of starting) {
+      appt.startAlertSentAt = now;
+      await appt.save();
+
+      const roomId = String(appt.studentId);
+      const notice = await Message.create({
+        roomId,
+        senderId: "system",
+        message: `⏰ It's time for your appointment! You have a ${MISSED_GRACE_MINUTES}-minute grace period before it's marked as missed.`,
+        seen: false,
+      });
+
+      if (io) io.to(roomId).emit("receiveMessage", notice);
+      console.log(`⏰ Start alert sent to room ${roomId} for appointment ${appt._id}`);
+    }
+  } catch (error) {
+    console.error("❌ checkStartingAppointments error:", error.message);
+  }
+};
+
+
 // 📆 SWEEP: if today still has open slots after the PM session starts,
 // offer students scheduled for TOMORROW the chance to move to today instead.
 // Runs on an interval from server.js (needs `io` to push the chat message live).
 exports.checkVacancyOffers = async (io) => {
   try {
     const now = new Date();
-    if (now.getDay() === 0 || now.getDay() === 6) return; // weekend, no office hours
+    if (now.getDay() === 0) return;                        // Sunday, closed
     if (now.getHours() < VACANCY_CHECK_HOUR) return;       // wait until the second half of the day
 
     const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1); tomorrow.setHours(0, 0, 0, 0);

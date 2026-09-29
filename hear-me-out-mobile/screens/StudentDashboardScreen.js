@@ -237,7 +237,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   const isSelectableDay = (d) => {
     const dow = d.getDay();
-    return dow !== 0 && dow !== 6 && d >= startOfToday();
+    return dow !== 0 && d >= startOfToday(); // Sunday closed; Saturday has a counselor in
   };
 
   const getMonthGrid = (monthDate) => {
