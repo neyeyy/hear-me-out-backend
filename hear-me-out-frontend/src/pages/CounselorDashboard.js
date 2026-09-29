@@ -577,14 +577,31 @@ export default function CounselorDashboard() {
   // Appointment-based Overview stats scoped to the filtered range (by
   // scheduleDate) when a filter is active; otherwise the usual all-time
   // per-student-latest counts, unchanged from before this filter existed.
-  const ovFilteredAppts = ovFilterRange
-    ? apptList.filter(a => a.scheduleDate &&
-        new Date(a.scheduleDate) >= ovFilterRange.start &&
-        new Date(a.scheduleDate) <= ovFilterRange.end)
+  // Deduped to each student's MOST RECENT appointment within the range, same
+  // as the unfiltered `appointments` map — otherwise a student rescheduled
+  // or seen more than once in the period gets counted multiple times.
+  const ovStudentApptMap = ovFilterRange
+    ? (() => {
+        const map = {};
+        apptList
+          .filter(a => a.scheduleDate && a.studentId &&
+            new Date(a.scheduleDate) >= ovFilterRange.start &&
+            new Date(a.scheduleDate) <= ovFilterRange.end)
+          .forEach(a => {
+            const sid = typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+            const existing = map[sid];
+            if (!existing || new Date(a.createdAt) > new Date(existing.createdAt)) map[sid] = a;
+          });
+        return map;
+      })()
     : null;
-  const ovPending        = ovFilteredAppts ? ovFilteredAppts.filter(a => a.status === "PENDING").length : pending;
-  const ovDone            = ovFilteredAppts ? ovFilteredAppts.filter(a => a.status === "DONE").length : done;
-  const ovOngoingCount    = ovFilteredAppts ? ovFilteredAppts.filter(a => a.status === "ONGOING").length : ongoingCount;
+  const ovStatsSource    = ovStudentApptMap ? Object.values(ovStudentApptMap) : Object.values(appointments);
+  const ovPending         = ovStatsSource.filter(a => a.status === "PENDING").length;
+  const ovDone            = ovStatsSource.filter(a => a.status === "DONE").length;
+  // "Active" = still in the pipeline — scheduled or in progress, not yet
+  // done/missed/cancelled. (ONGOING is never actually set by the app today,
+  // so in practice this equals the pending count, but stays correct if that changes.)
+  const ovActiveCount     = ovStatsSource.filter(a => a.status === "PENDING" || a.status === "ONGOING").length;
   const ovCompletionRate  = (ovPending + ovDone) > 0 ? Math.round(ovDone / (ovPending + ovDone) * 100) : 0;
 
   /* ── mood analytics ── */
@@ -930,9 +947,75 @@ export default function CounselorDashboard() {
             {/* Smart stat row */}
             <div style={s.statsGrid}>
               <StatCard icon="🚨" label="Needs Action"     value={needsActionCount} accent="#F87171" sub="HIGH risk, unresolved" />
-              <StatCard icon="🔄" label="Active Sessions"  value={ovOngoingCount}   accent="#5B6BD8" sub="Currently in progress" />
+              <StatCard icon="🔄" label="Active Sessions"  value={ovActiveCount}    accent="#5B6BD8" sub="Not yet done or missed" />
               <StatCard icon="⏳" label="Awaiting Session" value={ovPending}        accent="#F9A72B" sub="Appointments pending" />
-              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} of ${ovPending + ovDone} sessions done`} />
+              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} of ${ovPending + ovDone} students done`} />
+            </div>
+
+            {/* Mood Climate */}
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background: "#5B6BD8" }} />
+                  <h2 style={s.cardTitle}>Mood Climate</h2>
+                </div>
+                <span style={s.cardSub}>{totalMoods} entries</span>
+              </div>
+
+              {totalMoods === 0 ? (
+                <div style={s.emptyBox}>
+                  <span style={{ fontSize: "28px" }}>📊</span>
+                  <p style={s.emptyText}>No mood data recorded yet</p>
+                </div>
+              ) : (() => {
+                const top  = (analytics?.moods || []).slice().sort((a, b) => b.count - a.count)[0];
+                const meta = top ? (MOOD_META[top._id] || { emoji: "❓", color: "#ccc" }) : null;
+                return (
+                  <>
+                    {top && meta && (
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: "14px",
+                        padding: "14px 16px",
+                        background: meta.color + "18",
+                        borderRadius: "12px",
+                        marginBottom: "16px",
+                        border: `1.5px solid ${meta.color}33`,
+                      }}>
+                        <span style={{ fontSize: "38px", lineHeight: 1 }}>{meta.emoji}</span>
+                        <div>
+                          <div style={{ fontSize: "10px", fontWeight: "700", color: "#A8AECB", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins',sans-serif", marginBottom: "3px" }}>
+                            Most reported mood
+                          </div>
+                          <div style={{ fontSize: "19px", fontWeight: "700", color: meta.color, fontFamily: "'Poppins',sans-serif", lineHeight: 1.2 }}>
+                            {top._id}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#A8AECB", marginTop: "2px" }}>
+                            {top.count} of {totalMoods} entries ({Math.round(top.count / totalMoods * 100)}%)
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div style={s.moodBars}>
+                      {(analytics?.moods || []).map(m => {
+                        const mm  = MOOD_META[m._id] || { emoji: "❓", color: "#ccc" };
+                        const pct = Math.round(m.count / totalMoods * 100);
+                        return (
+                          <div key={m._id} style={s.moodBarRow}>
+                            <div style={s.moodBarLabel}>
+                              <span style={s.moodEmoji}>{mm.emoji}</span>
+                              <span style={s.moodName}>{m._id}</span>
+                            </div>
+                            <div style={s.moodBarTrack}>
+                              <div style={{ ...s.moodBarFill, width: `${pct}%`, background: mm.color }} />
+                            </div>
+                            <span style={s.moodBarPct}>{pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Overview Mini Calendar */}
@@ -1064,115 +1147,6 @@ export default function CounselorDashboard() {
               );
             })()}
 
-            {/* Two-col: Mood Climate + Session Pipeline */}
-            <div style={s.twoCol}>
-
-              {/* Mood Climate */}
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background: "#5B6BD8" }} />
-                    <h2 style={s.cardTitle}>Mood Climate</h2>
-                  </div>
-                  <span style={s.cardSub}>{totalMoods} entries</span>
-                </div>
-
-                {totalMoods === 0 ? (
-                  <div style={s.emptyBox}>
-                    <span style={{ fontSize: "28px" }}>📊</span>
-                    <p style={s.emptyText}>No mood data recorded yet</p>
-                  </div>
-                ) : (() => {
-                  const top  = (analytics?.moods || []).slice().sort((a, b) => b.count - a.count)[0];
-                  const meta = top ? (MOOD_META[top._id] || { emoji: "❓", color: "#ccc" }) : null;
-                  return (
-                    <>
-                      {top && meta && (
-                        <div style={{
-                          display: "flex", alignItems: "center", gap: "14px",
-                          padding: "14px 16px",
-                          background: meta.color + "18",
-                          borderRadius: "12px",
-                          marginBottom: "16px",
-                          border: `1.5px solid ${meta.color}33`,
-                        }}>
-                          <span style={{ fontSize: "38px", lineHeight: 1 }}>{meta.emoji}</span>
-                          <div>
-                            <div style={{ fontSize: "10px", fontWeight: "700", color: "#A8AECB", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins',sans-serif", marginBottom: "3px" }}>
-                              Most reported mood
-                            </div>
-                            <div style={{ fontSize: "19px", fontWeight: "700", color: meta.color, fontFamily: "'Poppins',sans-serif", lineHeight: 1.2 }}>
-                              {top._id}
-                            </div>
-                            <div style={{ fontSize: "12px", color: "#A8AECB", marginTop: "2px" }}>
-                              {top.count} of {totalMoods} entries ({Math.round(top.count / totalMoods * 100)}%)
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      <div style={s.moodBars}>
-                        {(analytics?.moods || []).map(m => {
-                          const mm  = MOOD_META[m._id] || { emoji: "❓", color: "#ccc" };
-                          const pct = Math.round(m.count / totalMoods * 100);
-                          return (
-                            <div key={m._id} style={s.moodBarRow}>
-                              <div style={s.moodBarLabel}>
-                                <span style={s.moodEmoji}>{mm.emoji}</span>
-                                <span style={s.moodName}>{m._id}</span>
-                              </div>
-                              <div style={s.moodBarTrack}>
-                                <div style={{ ...s.moodBarFill, width: `${pct}%`, background: mm.color }} />
-                              </div>
-                              <span style={s.moodBarPct}>{pct}%</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Session Pipeline */}
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background: "#7C6FCD" }} />
-                    <h2 style={s.cardTitle}>Session Pipeline</h2>
-                  </div>
-                  <span style={s.cardSub}>{ovCompletionRate}% complete</span>
-                </div>
-
-                <div style={s.apptSummary}>
-                  {[
-                    { label: "⏳ Pending",   value: ovPending,     color: "#F9A72B", bg: "#FFF8EC", desc: "Waiting to start" },
-                    { label: "🔄 Ongoing",   value: ovOngoingCount, color: "#5B6BD8", bg: "#EEF0FD", desc: "In progress now" },
-                    { label: "✅ Completed", value: ovDone,        color: "#38C9B8", bg: "#E6FAF7", desc: "Sessions closed" },
-                  ].map(row => (
-                    <div key={row.label} style={{ ...s.apptRow, background: row.bg, flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
-                        <span style={{ ...s.apptLabel, color: row.color }}>{row.label}</span>
-                        <span style={{ ...s.apptCount, color: row.color }}>{row.value}</span>
-                      </div>
-                      <span style={{ fontSize: "11px", color: row.color, opacity: 0.7, fontFamily: "'Lato',sans-serif" }}>{row.desc}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={s.apptProgressWrap}>
-                  <p style={s.apptProgressLabel}>Overall completion rate</p>
-                  <div style={s.progressBar}>
-                    <div style={{
-                      ...s.progressFill,
-                      width: `${ovCompletionRate}%`,
-                      background: "linear-gradient(90deg,#38C9B8,#5B6BD8)",
-                    }} />
-                  </div>
-                  <p style={s.progressPct}>{ovCompletionRate}% of sessions completed</p>
-                </div>
-
-              </div>
-            </div>
           </>
         )}
 
