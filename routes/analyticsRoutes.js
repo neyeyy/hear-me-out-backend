@@ -7,6 +7,8 @@ const Appointment = require("../models/Appointment");
 const Assessment  = require("../models/Assessment");
 
 // GET /api/analytics/dashboard
+// Optional ?from=<ISO date>&to=<ISO date> scopes the mood breakdown to that
+// range — used by the Overview page's day/month/year filter.
 router.get("/dashboard", async (req, res) => {
   try {
     const totalStudents        = await User.countDocuments({ role: "student" });
@@ -14,7 +16,13 @@ router.get("/dashboard", async (req, res) => {
     const pendingAppointments  = await Appointment.countDocuments({ status: "PENDING" });
     const completedAppointments= await Appointment.countDocuments({ status: "COMPLETED" });
 
+    const { from, to } = req.query;
+    const moodMatchStage = (from && to)
+      ? [{ $match: { createdAt: { $gte: new Date(from), $lte: new Date(to) } } }]
+      : [];
+
     const moods = await Mood.aggregate([
+      ...moodMatchStage,
       { $group: { _id: "$mood", count: { $sum: 1 } } }
     ]);
 

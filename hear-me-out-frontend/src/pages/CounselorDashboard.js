@@ -76,6 +76,11 @@ export default function CounselorDashboard() {
   // schedule tab
   const [weekOffset,     setWeekOffset]   = useState(0);
   const [ovWeekOffset,   setOvWeekOffset] = useState(0);
+  // overview stats filter — "all" | "day" | "month" | "year"
+  const [ovFilterMode,   setOvFilterMode]  = useState("all");
+  const [ovFilterDay,    setOvFilterDay]   = useState(() => new Date().toISOString().slice(0, 10));
+  const [ovFilterMonth,  setOvFilterMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [ovFilterYear,   setOvFilterYear]  = useState(() => String(new Date().getFullYear()));
   const [rescheduleAppt, setRescheduleAppt] = useState(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("09:00");
@@ -102,6 +107,7 @@ export default function CounselorDashboard() {
   const chatRoomRef      = useRef(null);
   const schedInitRef     = useRef(false);
   const ovInitRef        = useRef(false);
+  const ovFilterMountRef = useRef(false);
   const chatTypingTimer  = useRef(null);
   const navigate = useNavigate();
 
@@ -181,12 +187,23 @@ export default function CounselorDashboard() {
     } catch (e) { console.log(e); }
   };
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (range) => {
     try {
-      const res = await API.get("/analytics/dashboard");
+      const qs = range
+        ? `?from=${encodeURIComponent(range.start.toISOString())}&to=${encodeURIComponent(range.end.toISOString())}`
+        : "";
+      const res = await API.get(`/analytics/dashboard${qs}`);
       setAnalytics(res.data);
     } catch (e) { console.log(e); }
   };
+
+  // Recompute the Overview's mood breakdown whenever the day/month/year
+  // filter changes — the initial "all time" load is already covered by the
+  // Promise.all on mount, so skip firing this a second time right away.
+  useEffect(() => {
+    if (!ovFilterMountRef.current) { ovFilterMountRef.current = true; return; }
+    fetchAnalytics(ovFilterRange);
+  }, [ovFilterMode, ovFilterDay, ovFilterMonth, ovFilterYear]); // eslint-disable-line
 
   // Pop a toast in the corner for ~5s, restarting the timer if another arrives
   const showToast = useCallback((text) => {
@@ -532,6 +549,44 @@ export default function CounselorDashboard() {
     return "Good evening";
   })();
 
+  /* ── overview day/month/year filter ── */
+  const ovFilterRange = (() => {
+    if (ovFilterMode === "day" && ovFilterDay) {
+      return {
+        start: new Date(`${ovFilterDay}T00:00:00`),
+        end:   new Date(`${ovFilterDay}T23:59:59.999`),
+      };
+    }
+    if (ovFilterMode === "month" && ovFilterMonth) {
+      const [y, m] = ovFilterMonth.split("-").map(Number);
+      return {
+        start: new Date(y, m - 1, 1, 0, 0, 0, 0),
+        end:   new Date(y, m, 0, 23, 59, 59, 999), // day 0 of next month = last day of this one
+      };
+    }
+    if (ovFilterMode === "year" && ovFilterYear) {
+      const y = Number(ovFilterYear);
+      return {
+        start: new Date(y, 0, 1, 0, 0, 0, 0),
+        end:   new Date(y, 11, 31, 23, 59, 59, 999),
+      };
+    }
+    return null; // "all"
+  })();
+
+  // Appointment-based Overview stats scoped to the filtered range (by
+  // scheduleDate) when a filter is active; otherwise the usual all-time
+  // per-student-latest counts, unchanged from before this filter existed.
+  const ovFilteredAppts = ovFilterRange
+    ? apptList.filter(a => a.scheduleDate &&
+        new Date(a.scheduleDate) >= ovFilterRange.start &&
+        new Date(a.scheduleDate) <= ovFilterRange.end)
+    : null;
+  const ovPending        = ovFilteredAppts ? ovFilteredAppts.filter(a => a.status === "PENDING").length : pending;
+  const ovDone            = ovFilteredAppts ? ovFilteredAppts.filter(a => a.status === "DONE").length : done;
+  const ovOngoingCount    = ovFilteredAppts ? ovFilteredAppts.filter(a => a.status === "ONGOING").length : ongoingCount;
+  const ovCompletionRate  = (ovPending + ovDone) > 0 ? Math.round(ovDone / (ovPending + ovDone) * 100) : 0;
+
   /* ── mood analytics ── */
   const totalMoods = analytics?.moods?.reduce((s, m) => s + m.count, 0) || 0;
 
@@ -837,12 +892,47 @@ export default function CounselorDashboard() {
         {/* ══════════ OVERVIEW TAB ══════════ */}
         {tab === "overview" && (
           <>
+            {/* Date filter — scopes the stats/mood breakdown below to a day, month, or year */}
+            <div style={s.ovFilterBar}>
+              <div style={s.ovFilterModeGroup}>
+                {[
+                  { key: "all",   label: "All time" },
+                  { key: "day",   label: "Day" },
+                  { key: "month", label: "Month" },
+                  { key: "year",  label: "Year" },
+                ].map(m => (
+                  <button
+                    key={m.key}
+                    onClick={() => setOvFilterMode(m.key)}
+                    style={{ ...s.ovFilterModeBtn, ...(ovFilterMode === m.key ? s.ovFilterModeBtnActive : {}) }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              {ovFilterMode === "day" && (
+                <input type="date" value={ovFilterDay} onChange={e => setOvFilterDay(e.target.value)} style={s.ovFilterInput} />
+              )}
+              {ovFilterMode === "month" && (
+                <input type="month" value={ovFilterMonth} onChange={e => setOvFilterMonth(e.target.value)} style={s.ovFilterInput} />
+              )}
+              {ovFilterMode === "year" && (
+                <input
+                  type="number"
+                  value={ovFilterYear}
+                  onChange={e => setOvFilterYear(e.target.value)}
+                  min="2000" max="2100"
+                  style={{ ...s.ovFilterInput, width: "90px" }}
+                />
+              )}
+            </div>
+
             {/* Smart stat row */}
             <div style={s.statsGrid}>
               <StatCard icon="🚨" label="Needs Action"     value={needsActionCount} accent="#F87171" sub="HIGH risk, unresolved" />
-              <StatCard icon="🔄" label="Active Sessions"  value={ongoingCount}     accent="#5B6BD8" sub="Currently in progress" />
-              <StatCard icon="⏳" label="Awaiting Session" value={pending}          accent="#F9A72B" sub="Appointments pending" />
-              <StatCard icon="✅" label="Completion Rate"  value={`${completionRate}%`} accent="#38C9B8" sub={`${done} of ${pending + done} sessions done`} />
+              <StatCard icon="🔄" label="Active Sessions"  value={ovOngoingCount}   accent="#5B6BD8" sub="Currently in progress" />
+              <StatCard icon="⏳" label="Awaiting Session" value={ovPending}        accent="#F9A72B" sub="Appointments pending" />
+              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} of ${ovPending + ovDone} sessions done`} />
             </div>
 
             {/* Overview Mini Calendar */}
@@ -1050,14 +1140,14 @@ export default function CounselorDashboard() {
                     <span style={{ ...s.dot, background: "#7C6FCD" }} />
                     <h2 style={s.cardTitle}>Session Pipeline</h2>
                   </div>
-                  <span style={s.cardSub}>{completionRate}% complete</span>
+                  <span style={s.cardSub}>{ovCompletionRate}% complete</span>
                 </div>
 
                 <div style={s.apptSummary}>
                   {[
-                    { label: "⏳ Pending",   value: pending,      color: "#F9A72B", bg: "#FFF8EC", desc: "Waiting to start" },
-                    { label: "🔄 Ongoing",   value: ongoingCount, color: "#5B6BD8", bg: "#EEF0FD", desc: "In progress now" },
-                    { label: "✅ Completed", value: done,          color: "#38C9B8", bg: "#E6FAF7", desc: "Sessions closed" },
+                    { label: "⏳ Pending",   value: ovPending,     color: "#F9A72B", bg: "#FFF8EC", desc: "Waiting to start" },
+                    { label: "🔄 Ongoing",   value: ovOngoingCount, color: "#5B6BD8", bg: "#EEF0FD", desc: "In progress now" },
+                    { label: "✅ Completed", value: ovDone,        color: "#38C9B8", bg: "#E6FAF7", desc: "Sessions closed" },
                   ].map(row => (
                     <div key={row.label} style={{ ...s.apptRow, background: row.bg, flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
@@ -1074,11 +1164,11 @@ export default function CounselorDashboard() {
                   <div style={s.progressBar}>
                     <div style={{
                       ...s.progressFill,
-                      width: `${completionRate}%`,
+                      width: `${ovCompletionRate}%`,
                       background: "linear-gradient(90deg,#38C9B8,#5B6BD8)",
                     }} />
                   </div>
-                  <p style={s.progressPct}>{completionRate}% of sessions completed</p>
+                  <p style={s.progressPct}>{ovCompletionRate}% of sessions completed</p>
                 </div>
 
               </div>
@@ -2465,6 +2555,32 @@ const s = {
     border: "1.5px solid #E5E7EB", borderRadius: "10px",
     fontSize: "14px", fontWeight: "600", cursor: "pointer",
     fontFamily: "'Poppins',sans-serif",
+  },
+
+  /* ── Overview date filter ── */
+  ovFilterBar: {
+    display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+    marginBottom: "16px",
+  },
+  ovFilterModeGroup: {
+    display: "flex", gap: "4px",
+    background: "#F3F4F8", borderRadius: "10px", padding: "3px",
+  },
+  ovFilterModeBtn: {
+    padding: "6px 14px",
+    background: "transparent", color: "#7B7F9E", border: "none", borderRadius: "8px",
+    fontSize: "12px", fontWeight: "600", cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif", transition: "all 0.15s",
+  },
+  ovFilterModeBtnActive: {
+    background: "#fff", color: "#5B6BD8",
+    boxShadow: "0 2px 6px rgba(91,107,216,0.18)",
+  },
+  ovFilterInput: {
+    padding: "6px 12px",
+    border: "1.5px solid #E5E7EB", borderRadius: "8px",
+    fontSize: "12px", fontWeight: "600", color: "#2D3047",
+    fontFamily: "'Poppins',sans-serif", background: "#fff",
   },
 
   /* ── Overview mini-calendar ── */
