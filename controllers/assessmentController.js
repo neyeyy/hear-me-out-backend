@@ -289,16 +289,23 @@ exports.createAssessment = async (req, res) => {
 };
 
 
-// 🔍 CHECK IF ASSESSMENT EXISTS (UNCHANGED)
+// 🔍 CHECK IF ASSESSMENT EXISTS / IS DUE FOR MONTHLY RETAKE
 exports.checkAssessment = async (req, res) => {
   try {
     const { studentId } = req.params;
 
-    const existing = await Assessment.findOne({ studentId });
+    const latest = await Assessment.findOne({ studentId }).sort({ createdAt: -1 });
+
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const dueForReassessment = latest
+      ? (Date.now() - new Date(latest.createdAt).getTime()) >= THIRTY_DAYS_MS
+      : false;
 
     res.json({
       success: true,
-      hasAssessment: !!existing
+      hasAssessment: !!latest,
+      lastAssessmentDate: latest ? latest.createdAt : null,
+      dueForReassessment
     });
 
   } catch (error) {

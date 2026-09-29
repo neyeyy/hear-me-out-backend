@@ -55,11 +55,6 @@ const OPTIONS_BY_SECTION = {
   ],
 };
 
-function formatBand(band) {
-  if (!band) return "";
-  return band.split("_").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
-}
-
 export default function AssessmentScreen({ navigation }) {
   const [messages, setMessages] = useState([]);
   const [current, setCurrent] = useState(0);
@@ -160,8 +155,8 @@ export default function AssessmentScreen({ navigation }) {
       setResult(res.data);
 
       simulateTyping(() => {
-        addBotMessage(`PHQ-9 (depression) score: ${res.data.phq9Score}/27 — ${formatBand(res.data.phq9Severity)}`);
-        addBotMessage(`GAD-7 (anxiety) score: ${res.data.gad7Score}/21 — ${formatBand(res.data.gad7Severity)}`);
+        addBotMessage(`PHQ-9 score: ${res.data.phq9Score}/27`);
+        addBotMessage(`GAD-7 score: ${res.data.gad7Score}/21`);
         addBotMessage("ℹ️ This is a screening result, not a clinical diagnosis. Only a licensed mental health professional can diagnose a mental health condition — think of this as a starting point for a conversation, not a label.");
         if (res.data.severity === "HIGH") {
           addBotMessage("⚠️ We recommend immediate counseling.");
@@ -224,7 +219,7 @@ export default function AssessmentScreen({ navigation }) {
               <Text style={styles.infoCardTitle}>💡 Why this matters</Text>
               <Text style={styles.infoCardText}>
                 Stress, anxiety, and low mood can build up gradually, and it's easy to not notice
-                how much they're affecting you. Checking in regularly helps catch these signs early,
+                how much they're affecting you. This screening helps catch these signs early,
                 so the Guidance Office can offer support before things become harder to manage.
               </Text>
             </View>
@@ -328,7 +323,7 @@ export default function AssessmentScreen({ navigation }) {
             ) : (
               <View style={styles.resultBar}>
                 <TouchableOpacity
-                  onPress={() => navigation.replace("Dashboard", { step: "dashboard" })}
+                  onPress={() => navigation.replace("Dashboard", { step: "pick" })}
                   activeOpacity={0.85}
                 >
                   <LinearGradient colors={["#6C63FF", "#764ba2"]} style={styles.continueBtn}>

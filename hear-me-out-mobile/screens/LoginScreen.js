@@ -100,10 +100,10 @@ export default function LoginScreen({ navigation }) {
       if (user.role === "student") {
         try {
           const check = await API.get(`/assessment/check/${user.id}`);
-          if (check.data.hasAssessment) {
-            navigation.replace("Dashboard", { step: "pick" });
-          } else {
+          if (!check.data.hasAssessment || check.data.dueForReassessment) {
             navigation.replace("Assessment");
+          } else {
+            navigation.replace("Dashboard", { step: "choice" });
           }
         } catch {
           navigation.replace("Assessment");

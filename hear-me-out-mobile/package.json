@@ -25,6 +25,7 @@
     "socket.io-client": "^4.7.5"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.0"
+    "@babel/core": "^7.24.0",
+    "@expo/ngrok": "^4.1.3"
   }
 }

@@ -64,7 +64,7 @@ const MOODS = [
 ];
 
 const STATUS_META = {
-  PENDING: { label: "Pending",   color: "#F7971E", bg: "rgba(247,151,30,0.12)",  border: "rgba(247,151,30,0.35)" },
+  PENDING: { label: "Upcoming",  color: "#F7971E", bg: "rgba(247,151,30,0.12)",  border: "rgba(247,151,30,0.35)" },
   ONGOING: { label: "Ongoing",   color: "#6C63FF", bg: "rgba(108,99,255,0.12)", border: "rgba(108,99,255,0.35)" },
   DONE:    { label: "Completed", color: "#4ECDC4", bg: "rgba(78,205,196,0.12)",  border: "rgba(78,205,196,0.35)" },
 };
@@ -79,7 +79,7 @@ function relTime(date) {
 }
 
 /* ─── component ────────────────────────────────────── */
-// step: "pick" | "note" | "dashboard" | "profile"
+// step: "choice" | "pick" | "note" | "dashboard" | "profile"
 export default function StudentDashboardScreen({ navigation, route }) {
   const [step,         setStep]        = useState(route.params?.step || "dashboard");
   const [selectedMood, setSelectedMood]= useState(null);
@@ -494,10 +494,6 @@ export default function StudentDashboardScreen({ navigation, route }) {
                       <Text style={s.apptKey}>Counselor</Text>
                       <Text style={s.apptVal}>{appointment.assignedTo || "—"}</Text>
                     </View>
-                    <View style={s.apptRow}>
-                      <Text style={s.apptKey}>Severity</Text>
-                      <Text style={[s.apptVal, { fontWeight:"700" }]}>{appointment.severity}</Text>
-                    </View>
                     {appointment.scheduleDate && (
                       <View style={[s.apptRow, { borderBottomWidth:0 }]}>
                         <Text style={s.apptKey}>Scheduled</Text>
@@ -544,17 +540,17 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 <View style={s.section}>
                   <Text style={s.sectionLabel}>APPOINTMENT HISTORY</Text>
                   {(showAllHistory ? history : history.slice(0, 3)).map((h, i, arr) => {
-                    const colors = { PENDING:"#F7971E", ONGOING:"#6C63FF", DONE:"#4ECDC4", CANCELLED:"#9CA3AF" };
+                    const colors = { PENDING:"#F7971E", ONGOING:"#6C63FF", DONE:"#4ECDC4", CANCELLED:"#9CA3AF", MISSED:"#F87171" };
+                    const labels = { PENDING:"Upcoming", ONGOING:"Ongoing", DONE:"Completed", CANCELLED:"Cancelled", MISSED:"Missed" };
                     const c = colors[h.status] || "#9CA3AF";
                     return (
                       <View key={h._id || i} style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingVertical:10, borderBottomWidth: i < arr.length-1 ? 1 : 0, borderBottomColor:"rgba(255,255,255,0.06)" }}>
                         <View>
-                          <Text style={{ fontSize:12, color:c, fontWeight:"700" }}>{h.status}</Text>
+                          <Text style={{ fontSize:12, color:c, fontWeight:"700" }}>{labels[h.status] || h.status}</Text>
                           <Text style={{ fontSize:11, color:"rgba(255,255,255,0.38)", marginTop:2 }}>
                             {h.scheduleDate ? new Date(h.scheduleDate).toLocaleDateString("en-US",{ month:"short", day:"numeric", year:"numeric" }) : "Not scheduled"}
                           </Text>
                         </View>
-                        <Text style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>{h.severity}</Text>
                       </View>
                     );
                   })}
@@ -767,6 +763,60 @@ export default function StudentDashboardScreen({ navigation, route }) {
   }
 
   /* ── PICK MOOD ── */
+  /* ── CHOICE STEP — reopening the app, no reassessment due yet ── */
+  if (step === "choice") {
+    return (
+      <View style={{ flex:1 }}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient colors={["#1a1a2e","#16213e","#0f3460"]} style={s.page}>
+          <View style={[s.blob, { width:280, height:280, top:-80, right:-60, opacity:0.12 }]} />
+          <View style={[s.blob, { width:200, height:200, bottom:100, left:-50, opacity:0.08 }]} />
+
+          <SafeAreaView style={{ flex:1 }}>
+            <ScrollView contentContainerStyle={s.pickContent} showsVerticalScrollIndicator={false}>
+              <View style={s.topRow}>
+                <View style={{ flex:1 }}>
+                  <Text style={s.greeting2}>Welcome back{userName ? `, ${userName.split(" ")[0]}` : ""}!</Text>
+                  <Text style={s.dateText}>
+                    {new Date().toLocaleDateString("en-US",{ weekday:"long", month:"long", day:"numeric" })}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={s.heroWrap}>
+                <Text style={s.heroEmoji}>👋</Text>
+                <Text style={s.heroTitle}>What would you like{"\n"}to do today?</Text>
+                <Text style={s.heroSub}>Pick one to get started.</Text>
+              </View>
+
+              <TouchableOpacity onPress={handleTrackMood} activeOpacity={0.88} style={{ marginBottom:14 }}>
+                <LinearGradient colors={["#4ECDC4","#44A08D"]} start={{x:0,y:0}} end={{x:1,y:1}} style={s.choiceCard}>
+                  <Text style={s.choiceCardEmoji}>💙</Text>
+                  <View style={{ flex:1 }}>
+                    <Text style={s.choiceCardTitle}>Track My Mood</Text>
+                    <Text style={s.choiceCardSub}>A quick daily check-in</Text>
+                  </View>
+                  <Text style={s.choiceCardArrow}>→</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => navigation.replace("Assessment")} activeOpacity={0.88}>
+                <LinearGradient colors={["#6C63FF","#764ba2"]} start={{x:0,y:0}} end={{x:1,y:1}} style={s.choiceCard}>
+                  <Text style={s.choiceCardEmoji}>🧠</Text>
+                  <View style={{ flex:1 }}>
+                    <Text style={s.choiceCardTitle}>Take the Assessment</Text>
+                    <Text style={s.choiceCardSub}>PHQ-9 & GAD-7 screening</Text>
+                  </View>
+                  <Text style={s.choiceCardArrow}>→</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          </SafeAreaView>
+        </LinearGradient>
+      </View>
+    );
+  }
+
   if (step === "pick") {
     return (
       <View style={{ flex:1 }}>
@@ -1262,6 +1312,15 @@ const s = StyleSheet.create({
   heroEmoji: { fontSize:52, marginBottom:14 },
   heroTitle: { fontSize:30, fontWeight:"800", color:"#fff", textAlign:"center", lineHeight:38, letterSpacing:-0.5, marginBottom:10 },
   heroSub: { fontSize:14, color:"rgba(255,255,255,0.5)", textAlign:"center", lineHeight:21 },
+  choiceCard: {
+    flexDirection:"row", alignItems:"center", gap:14,
+    borderRadius:20, padding:18,
+    shadowColor:"#000", shadowOffset:{width:0,height:8}, shadowOpacity:0.25, shadowRadius:14, elevation:8,
+  },
+  choiceCardEmoji: { fontSize:30 },
+  choiceCardTitle: { fontSize:16, fontWeight:"800", color:"#fff" },
+  choiceCardSub: { fontSize:12, color:"rgba(255,255,255,0.75)", marginTop:2 },
+  choiceCardArrow: { fontSize:20, color:"rgba(255,255,255,0.85)", fontWeight:"700" },
   moodGrid: { flexDirection:"row", flexWrap:"wrap", justifyContent:"space-between", gap:14 },
   moodCardTouch: { borderRadius:24, shadowColor:"#000", shadowOffset:{width:0,height:10}, shadowOpacity:0.3, shadowRadius:18, elevation:10 },
   moodCard: { borderRadius:24, padding:22, height:156, justifyContent:"space-between", overflow:"hidden" },

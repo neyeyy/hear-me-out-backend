@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { identify } from "./services/socket";
+import API from "./services/api";
 
 import LoginScreen            from "./screens/LoginScreen";
 import RegisterScreen         from "./screens/RegisterScreen";
@@ -23,7 +24,7 @@ export default function App() {
   // and without this check it always landed back on Login even with a still-valid
   // session saved in AsyncStorage.
   const [checkingSession, setCheckingSession] = useState(true);
-  const [hasSession,      setHasSession]      = useState(false);
+  const [initialRoute, setInitialRoute] = useState({ name: "Login", params: undefined });
 
   // Actively check for and apply a newer OTA update on every launch, rather
   // than relying on the default silent "downloads now, applies next launch"
@@ -62,8 +63,23 @@ export default function App() {
           AsyncStorage.getItem("userId"),
         ]);
         const valid = !!token && role === "student";
-        setHasSession(valid);
-        if (valid && userId) identify(userId, role);
+        if (valid && userId) {
+          identify(userId, role);
+          // Reopening the app (not a fresh login) still needs to check whether
+          // a monthly reassessment is due, so it isn't only enforced at login.
+          try {
+            const check = await API.get(`/assessment/check/${userId}`);
+            if (!check.data.hasAssessment || check.data.dueForReassessment) {
+              setInitialRoute({ name: "Assessment" });
+            } else {
+              setInitialRoute({ name: "Dashboard", params: { step: "choice" } });
+            }
+          } catch (e) {
+            // Can't reach the server to check — land on the dashboard's mood
+            // check-in rather than blocking the whole app on a network hiccup.
+            setInitialRoute({ name: "Dashboard", params: { step: "pick" } });
+          }
+        }
       } catch (e) {
         // Storage unreadable — fall back to requiring login.
       } finally {
@@ -85,13 +101,13 @@ export default function App() {
     <NavigationContainer>
       <StatusBar style="light" />
       <Stack.Navigator
-        initialRouteName={hasSession ? "Dashboard" : "Login"}
+        initialRouteName={initialRoute.name}
         screenOptions={{ headerShown: false, animation: "fade_from_bottom" }}
       >
         <Stack.Screen name="Login"      component={LoginScreen} />
         <Stack.Screen name="Register"   component={RegisterScreen} />
         <Stack.Screen name="Assessment" component={AssessmentScreen} />
-        <Stack.Screen name="Dashboard"  component={StudentDashboardScreen} initialParams={{ step: "pick" }} />
+        <Stack.Screen name="Dashboard"  component={StudentDashboardScreen} initialParams={initialRoute.params || { step: "choice" }} />
         <Stack.Screen name="Calendar"   component={CalendarScreen} />
         <Stack.Screen name="Chat"           component={ChatScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
