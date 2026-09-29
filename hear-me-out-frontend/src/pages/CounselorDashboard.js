@@ -602,7 +602,9 @@ export default function CounselorDashboard() {
   // done/missed/cancelled. (ONGOING is never actually set by the app today,
   // so in practice this equals the pending count, but stays correct if that changes.)
   const ovActiveCount     = ovStatsSource.filter(a => a.status === "PENDING" || a.status === "ONGOING").length;
-  const ovCompletionRate  = (ovPending + ovDone) > 0 ? Math.round(ovDone / (ovPending + ovDone) * 100) : 0;
+  // Completion rate is done students out of the FULL student roster (not just
+  // students who happen to have a pending/done appointment) — e.g. "3 of 39".
+  const ovCompletionRate  = total > 0 ? Math.round(ovDone / total * 100) : 0;
 
   /* ── mood analytics ── */
   const totalMoods = analytics?.moods?.reduce((s, m) => s + m.count, 0) || 0;
@@ -949,7 +951,7 @@ export default function CounselorDashboard() {
               <StatCard icon="🚨" label="Needs Action"     value={needsActionCount} accent="#F87171" sub="HIGH risk, unresolved" />
               <StatCard icon="🔄" label="Active Sessions"  value={ovActiveCount}    accent="#5B6BD8" sub="Not yet done or missed" />
               <StatCard icon="⏳" label="Awaiting Session" value={ovPending}        accent="#F9A72B" sub="Appointments pending" />
-              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} of ${ovPending + ovDone} students done`} />
+              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} of ${total} students done`} />
             </div>
 
             {/* Mood Climate */}
