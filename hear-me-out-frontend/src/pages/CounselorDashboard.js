@@ -966,7 +966,7 @@ export default function CounselorDashboard() {
               <StatCard icon="🚨" label="Needs Action"     value={needsActionCount} accent="#F87171" sub="HIGH risk, unresolved" />
               <StatCard icon="🔄" label="Active Sessions"  value={ovActiveCount}    accent="#5B6BD8" sub="Not yet done or missed" />
               <StatCard icon="⏳" label="Awaiting Session" value={ovPending}        accent="#F9A72B" sub="Appointments pending" />
-              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} of ${total} students done`} />
+              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} out of ${total} students`} />
             </div>
 
             {/* Mood Climate */}
