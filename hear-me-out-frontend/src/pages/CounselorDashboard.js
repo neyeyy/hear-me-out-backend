@@ -602,24 +602,41 @@ export default function CounselorDashboard() {
   // so in practice this equals the pending count, but stays correct if that changes.)
   const ovActiveCount     = ovStatsSource.filter(a => a.status === "PENDING" || a.status === "ONGOING").length;
 
-  // Students counted as "done" — anyone with AT LEAST ONE completed (DONE)
-  // appointment in scope, even if they've since been booked again (e.g. after
-  // a monthly reassessment) and their MOST RECENT appointment isn't Done.
-  // ovStatsSource above only reflects each student's latest appointment, so
-  // it can't be used here — it would drop students exactly like that.
+  // "Total" for the Completion Rate card — when a day/month/year filter is
+  // active, only students who SIGNED UP in that period count; otherwise the
+  // full roster.
+  const ovSignupCohortIds = ovFilterRange
+    ? new Set(
+        students
+          .filter(s => s.createdAt &&
+            new Date(s.createdAt) >= ovFilterRange.start &&
+            new Date(s.createdAt) <= ovFilterRange.end)
+          .map(s => s._id)
+      )
+    : null;
+  const ovTotal = ovSignupCohortIds ? ovSignupCohortIds.size : total;
+
+  // Students counted as "done" — anyone (within the signup cohort above, if
+  // filtered) with AT LEAST ONE completed (DONE) appointment ever, even if
+  // they've since been booked again (e.g. after a monthly reassessment) and
+  // their MOST RECENT appointment isn't Done. ovStatsSource above only
+  // reflects each student's latest appointment, so it can't be used here —
+  // it would drop students exactly like that.
   const ovDoneStudentIds = new Set(
     apptList
-      .filter(a => a.studentId && a.status === "DONE" &&
-        (!ovFilterRange || (a.scheduleDate &&
-          new Date(a.scheduleDate) >= ovFilterRange.start &&
-          new Date(a.scheduleDate) <= ovFilterRange.end)))
+      .filter(a => {
+        if (!a.studentId || a.status !== "DONE") return false;
+        if (!ovSignupCohortIds) return true;
+        const sid = typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+        return ovSignupCohortIds.has(sid);
+      })
       .map(a => (typeof a.studentId === "object" ? a.studentId._id : a.studentId))
   );
   const ovDone = ovDoneStudentIds.size;
 
-  // Completion rate is done students out of the FULL student roster (not just
-  // students who happen to have a pending/done appointment) — e.g. "3 of 39".
-  const ovCompletionRate  = total > 0 ? Math.round(ovDone / total * 100) : 0;
+  // Completion rate is done students out of the (possibly signup-filtered)
+  // student total — e.g. "3 out of 39 students".
+  const ovCompletionRate  = ovTotal > 0 ? Math.round(ovDone / ovTotal * 100) : 0;
 
   /* ── mood analytics ── */
   const totalMoods = analytics?.moods?.reduce((s, m) => s + m.count, 0) || 0;
@@ -966,7 +983,7 @@ export default function CounselorDashboard() {
               <StatCard icon="🚨" label="Needs Action"     value={needsActionCount} accent="#F87171" sub="HIGH risk, unresolved" />
               <StatCard icon="🔄" label="Active Sessions"  value={ovActiveCount}    accent="#5B6BD8" sub="Not yet done or missed" />
               <StatCard icon="⏳" label="Awaiting Session" value={ovPending}        accent="#F9A72B" sub="Appointments pending" />
-              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} out of ${total} students`} />
+              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} out of ${ovTotal} students`} />
             </div>
 
             {/* Mood Climate */}

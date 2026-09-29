@@ -8,7 +8,7 @@ const authMiddleware = require("../middleware/authMiddleware");
 router.get("/students", authMiddleware, async (req, res) => {
   try {
     // 1. GET ALL STUDENTS
-    const students = await User.find({ role: "student" }, "name email yearLevel");
+    const students = await User.find({ role: "student" }, "name email yearLevel createdAt");
 
     // 2. ATTACH LATEST ASSESSMENT SEVERITY
     const studentsWithSeverity = await Promise.all(
@@ -22,6 +22,7 @@ router.get("/students", authMiddleware, async (req, res) => {
           name:      student.name,
           email:     student.email,
           yearLevel: student.yearLevel || null,
+          createdAt: student.createdAt,
           severity:  latestAssessment ? latestAssessment.severity : "LOW",
           score:     latestAssessment ? latestAssessment.score    : 0,
         };
