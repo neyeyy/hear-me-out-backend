@@ -126,6 +126,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [schedTime,      setSchedTime]      = useState("");
   const [schedLoading,   setSchedLoading]   = useState(false);
   const [schedErr,       setSchedErr]       = useState("");
+  const [schedCounselor, setSchedCounselor] = useState("Any");
   const schedDrag = useDragToClose(() => setSchedModalOpen(false), schedModalOpen);
 
   // refs
@@ -282,6 +283,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
     setSchedErr("");
     setSchedMonth(d);
     setSchedDate(firstDay);
+    setSchedCounselor("Any");
     setSchedModalOpen(true);
     fetchSlotsForDate(firstDay);
   };
@@ -292,7 +294,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
     setSchedErr("");
     try {
       const dt = new Date(`${schedDate}T${schedTime}:00`);
-      const res = await API.post("/appointments", { scheduleDate: dt });
+      const res = await API.post("/appointments", { scheduleDate: dt, counselorChoice: schedCounselor });
       if (res.data.success) {
         setSchedModalOpen(false);
         setRequestMsg({ text:"Appointment scheduled!", ok:true });
@@ -492,7 +494,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
                     </View>
                     <View style={s.apptRow}>
                       <Text style={s.apptKey}>Counselor</Text>
-                      <Text style={s.apptVal}>{appointment.assignedTo || "—"}</Text>
+                      <Text style={s.apptVal}>{appointment.counselorName || appointment.assignedTo || "—"}</Text>
                     </View>
                     {appointment.scheduleDate && (
                       <View style={[s.apptRow, { borderBottomWidth:0 }]}>
@@ -743,6 +745,22 @@ export default function StudentDashboardScreen({ navigation, route }) {
                   ))}
                 </View>
               )}
+
+              {/* Counselor preference */}
+              <Text style={s.schedSectionLabel}>COUNSELOR</Text>
+              <View style={s.counselorRow}>
+                {["Ryan Mueden", "Rejoice Pante", "Any"].map(name => (
+                  <TouchableOpacity
+                    key={name}
+                    onPress={() => setSchedCounselor(name)}
+                    style={[s.counselorBtn, schedCounselor === name && s.counselorBtnActive]}
+                  >
+                    <Text style={[s.counselorBtnText, schedCounselor === name && s.counselorBtnTextActive]}>
+                      {name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               {!!schedErr && <Text style={s.schedErrText}>{schedErr}</Text>}
 
@@ -1275,6 +1293,14 @@ const s = StyleSheet.create({
   slotBtnDisabled: { backgroundColor:"rgba(255,255,255,0.02)" },
   slotBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
   slotBtnTextDisabled: { color:"rgba(255,255,255,0.2)", textDecorationLine:"line-through" },
+  counselorRow: { flexDirection:"row", flexWrap:"wrap", gap:8, marginBottom:8 },
+  counselorBtn: {
+    paddingVertical:10, paddingHorizontal:14, borderRadius:10,
+    backgroundColor:"rgba(255,255,255,0.05)",
+  },
+  counselorBtnActive: { backgroundColor:"#6C63FF" },
+  counselorBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  counselorBtnTextActive: { color:"#fff" },
   schedErrText: {
     fontSize:13, fontWeight:"600", color:"#F87171",
     textAlign:"center", marginTop:12,

@@ -34,6 +34,7 @@ export default function ChatScreen({ navigation }) {
   const [schedTime,       setSchedTime]      = useState("");
   const [schedLoading,    setSchedLoading]   = useState(false);
   const [schedErr,        setSchedErr]       = useState("");
+  const [schedCounselor,  setSchedCounselor] = useState("Any");
   const schedDrag = useDragToClose(() => setSchedModalOpen(false), schedModalOpen);
 
   const flatRef = useRef(null);
@@ -229,6 +230,7 @@ export default function ChatScreen({ navigation }) {
     setSchedErr("");
     setSchedMonth(d);
     setSchedDate(firstDay);
+    setSchedCounselor("Any");
     setSchedModalOpen(true);
     fetchSlotsForDate(firstDay);
   };
@@ -239,7 +241,7 @@ export default function ChatScreen({ navigation }) {
     setSchedErr("");
     try {
       const dt = new Date(`${schedDate}T${schedTime}:00`);
-      const res = await API.post("/appointments", { scheduleDate: dt });
+      const res = await API.post("/appointments", { scheduleDate: dt, counselorChoice: schedCounselor });
       if (res.data.success) {
         const confirmText = res.data.appointment?.scheduleDate
           ? `✅ New appointment scheduled: ${new Date(res.data.appointment.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`
@@ -503,6 +505,21 @@ export default function ChatScreen({ navigation }) {
               </View>
             )}
 
+            <Text style={styles.schedSectionLabel}>COUNSELOR</Text>
+            <View style={styles.counselorRow}>
+              {["Ryan Mueden", "Rejoice Pante", "Any"].map(name => (
+                <TouchableOpacity
+                  key={name}
+                  onPress={() => setSchedCounselor(name)}
+                  style={[styles.counselorBtn, schedCounselor === name && styles.counselorBtnActive]}
+                >
+                  <Text style={[styles.counselorBtnText, schedCounselor === name && styles.counselorBtnTextActive]}>
+                    {name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {!!schedErr && <Text style={styles.schedErrText}>{schedErr}</Text>}
 
             <TouchableOpacity
@@ -710,6 +727,14 @@ const styles = StyleSheet.create({
   slotBtnDisabled: { backgroundColor:"rgba(255,255,255,0.02)" },
   slotBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
   slotBtnTextDisabled: { color:"rgba(255,255,255,0.2)", textDecorationLine:"line-through" },
+  counselorRow: { flexDirection:"row", flexWrap:"wrap", gap:8, marginBottom:8 },
+  counselorBtn: {
+    paddingVertical:10, paddingHorizontal:14, borderRadius:10,
+    backgroundColor:"rgba(255,255,255,0.05)",
+  },
+  counselorBtnActive: { backgroundColor:"#6C63FF" },
+  counselorBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  counselorBtnTextActive: { color:"#fff" },
   schedErrText: {
     fontSize:13, fontWeight:"600", color:"#F87171",
     textAlign:"center", marginTop:12,

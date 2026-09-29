@@ -476,7 +476,7 @@ export default function StudentDashboard() {
                 </div>
                 <div style={p.apptRow}>
                   <span style={p.apptKey}>Counselor</span>
-                  <span style={p.apptVal}>{appointment.assignedTo || "—"}</span>
+                  <span style={p.apptVal}>{appointment.counselorName || appointment.assignedTo || "—"}</span>
                 </div>
                 <div style={p.apptRow}>
                   <span style={p.apptKey}>Severity</span>

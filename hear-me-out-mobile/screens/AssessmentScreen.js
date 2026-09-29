@@ -66,6 +66,10 @@ export default function AssessmentScreen({ navigation }) {
   // true from the moment an answer is tapped until the next question has
   // actually appeared — keeps a fast double-tap from registering twice.
   const [locked,      setLocked]      = useState(false);
+  // after the last question, before submitting — asks which counselor the
+  // student wants if a session ends up being scheduled.
+  const [awaitingCounselor, setAwaitingCounselor] = useState(false);
+  const [pendingAnswers,    setPendingAnswers]    = useState(null);
 
   const scrollRef = useRef(null);
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -141,17 +145,30 @@ export default function AssessmentScreen({ navigation }) {
         });
       }
     } else {
-      submitAssessment(updated);
+      setPendingAnswers(updated);
+      simulateTyping(() => {
+        addBotMessage("Last thing — if a session ends up getting scheduled, who would you like to see?");
+        setAwaitingCounselor(true);
+        setLocked(false);
+      });
     }
   };
 
-  const submitAssessment = async (finalAnswers) => {
+  const handleCounselorChoice = (choice, label) => {
+    if (locked) return;
+    setLocked(true);
+    addUserMessage(label);
+    setAwaitingCounselor(false);
+    submitAssessment(pendingAnswers, choice);
+  };
+
+  const submitAssessment = async (finalAnswers, counselorChoice) => {
     if (submitting) return; // prevent double submission
     setSubmitting(true);
     try {
       const phq9Answers = finalAnswers.slice(0, PHQ9_QUESTIONS.length);
       const gad7Answers = finalAnswers.slice(PHQ9_QUESTIONS.length);
-      const res = await API.post("/assessment", { phq9Answers, gad7Answers });
+      const res = await API.post("/assessment", { phq9Answers, gad7Answers, counselorChoice });
       setResult(res.data);
 
       simulateTyping(() => {
@@ -165,10 +182,11 @@ export default function AssessmentScreen({ navigation }) {
           const dateStr = res.data.appointment.scheduleDate
             ? new Date(res.data.appointment.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
             : null;
+          const withName = res.data.appointment.counselorName ? ` with ${res.data.appointment.counselorName}` : "";
           addBotMessage(
             dateStr
-              ? `📅 An appointment has been scheduled for you on ${dateStr}.`
-              : "📅 An appointment has been scheduled for you."
+              ? `📅 An appointment has been scheduled for you${withName} on ${dateStr}.`
+              : `📅 An appointment has been scheduled for you${withName}.`
           );
         }
         if (res.data.severity === "MEDIUM" && !res.data.appointment) {
@@ -302,24 +320,49 @@ export default function AssessmentScreen({ navigation }) {
 
             {/* Options or Result */}
             {!result ? (
-              <View style={styles.optionsBar}>
-                <Text style={styles.optHint}>Choose your answer:</Text>
-                <View style={styles.optGrid}>
-                  {OPTIONS_BY_SECTION[QUESTIONS[current].section].map((opt) => (
-                    <TouchableOpacity
-                      key={opt.value}
-                      onPress={() => handleAnswer(opt.value, opt.label)}
-                      disabled={locked}
-                      style={[styles.optBtn, { borderColor: opt.color, opacity: locked ? 0.4 : 1 }]}
-                      activeOpacity={0.75}
-                    >
-                      <Text style={[styles.optBtnText, { color: opt.color }]}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+              awaitingCounselor ? (
+                <View style={styles.optionsBar}>
+                  <Text style={styles.optHint}>Choose a counselor:</Text>
+                  <View style={styles.optGrid}>
+                    {[
+                      { value: "Ryan Mueden",   label: "Ryan Mueden",         color: "#6C63FF" },
+                      { value: "Rejoice Pante", label: "Rejoice Pante",       color: "#4ECDC4" },
+                      { value: "Any",           label: "Any / No preference", color: "#FFB347" },
+                    ].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.value}
+                        onPress={() => handleCounselorChoice(opt.value, opt.label)}
+                        disabled={locked}
+                        style={[styles.optBtn, { borderColor: opt.color, opacity: locked ? 0.4 : 1 }]}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.optBtnText, { color: opt.color }]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
-              </View>
+              ) : (
+                <View style={styles.optionsBar}>
+                  <Text style={styles.optHint}>Choose your answer:</Text>
+                  <View style={styles.optGrid}>
+                    {OPTIONS_BY_SECTION[QUESTIONS[current].section].map((opt) => (
+                      <TouchableOpacity
+                        key={opt.value}
+                        onPress={() => handleAnswer(opt.value, opt.label)}
+                        disabled={locked}
+                        style={[styles.optBtn, { borderColor: opt.color, opacity: locked ? 0.4 : 1 }]}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[styles.optBtnText, { color: opt.color }]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )
             ) : (
               <View style={styles.resultBar}>
                 <TouchableOpacity

@@ -308,7 +308,7 @@ exports.checkAssessment = async (req, res) => {
 exports.createAppointment = async (req, res) => {
   try {
     const studentId = req.user.id;
-    const { scheduleDate: requestedDate } = req.body || {};
+    const { scheduleDate: requestedDate, counselorChoice } = req.body || {};
 
     const existing = await Appointment.findOne({
       studentId,
@@ -367,6 +367,7 @@ exports.createAppointment = async (req, res) => {
       studentId,
       severity,
       assignedTo,
+      counselorName: Appointment.resolveCounselorName(counselorChoice),
       scheduleDate,
       durationMinutes,
       status: "PENDING"

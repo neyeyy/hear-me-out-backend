@@ -131,7 +131,7 @@ async function findNextAvailableSlotToday(durationMinutes = 30) {
 }
 
 // 🔥 AUTO APPOINTMENT FUNCTION
-const createAutoAppointment = async (studentId, severity, source) => {
+const createAutoAppointment = async (studentId, severity, source, counselorChoice) => {
   try {
     // 🚫 Prevent duplicate active appointments
     const existing = await Appointment.findOne({
@@ -140,7 +140,18 @@ const createAutoAppointment = async (studentId, severity, source) => {
     });
 
     if (existing) {
-      console.log("ℹ️ Active appointment already exists, using existing");
+      // A retake can land a different severity than the one that originally
+      // booked this appointment (e.g. LOW -> HIGH a month later) — keep the
+      // existing slot, but sync severity/duration so risk tier shown on the
+      // admin side always reflects the LATEST assessment, not a stale one.
+      if (existing.severity !== severity) {
+        existing.severity = severity;
+        existing.durationMinutes = durationFor(severity);
+        await existing.save();
+        console.log(`ℹ️ Active appointment already exists — synced severity to ${severity}`);
+      } else {
+        console.log("ℹ️ Active appointment already exists, using existing");
+      }
       return existing;
     }
 
@@ -163,6 +174,7 @@ const createAutoAppointment = async (studentId, severity, source) => {
       studentId,
       severity,
       assignedTo: "Guidance Counselor",
+      counselorName: Appointment.resolveCounselorName(counselorChoice),
       scheduleDate,
       durationMinutes,
       status: "PENDING",
@@ -186,7 +198,7 @@ exports.createAssessment = async (req, res) => {
     console.log("🔥 createAssessment HIT");
 
     const studentId = req.user.id;
-    const { phq9Answers, gad7Answers } = req.body || {};
+    const { phq9Answers, gad7Answers, counselorChoice } = req.body || {};
 
     if (!Array.isArray(phq9Answers) || phq9Answers.length !== 9 ||
         !Array.isArray(gad7Answers) || gad7Answers.length !== 7) {
@@ -223,7 +235,7 @@ exports.createAssessment = async (req, res) => {
     // HIGH/MEDIUM always get scheduled; LOW gets scheduled only if a slot is available
     if (severity === "HIGH" || severity === "MEDIUM") {
       console.log(`🔥 ${severity} severity detected`);
-      appointment = await createAutoAppointment(studentId, severity, "assessment");
+      appointment = await createAutoAppointment(studentId, severity, "assessment", counselorChoice);
     } else if (severity === "LOW") {
       const existingAppt = await Appointment.findOne({
         studentId,
@@ -241,6 +253,7 @@ exports.createAssessment = async (req, res) => {
             studentId,
             severity: "LOW",
             assignedTo: "Student Assistant",
+            counselorName: Appointment.resolveCounselorName(counselorChoice),
             scheduleDate: slotDate,
             durationMinutes,
             status: "PENDING",
