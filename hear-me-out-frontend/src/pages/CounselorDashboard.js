@@ -100,8 +100,15 @@ export default function CounselorDashboard() {
   const [chatSearch,     setChatSearch]     = useState("");
   // notifications
   const [notifOpen,      setNotifOpen]      = useState(false);
-  const [notifs,         setNotifs]         = useState([]);
   const [notifFilter,    setNotifFilter]    = useState("all");
+  // The panel itself is computed LIVE from current appointment/conversation
+  // state (see below) so a reload never makes a still-relevant notification
+  // disappear — this just remembers which specific ones were dismissed, so
+  // dismissing one sticks instead of it reappearing the moment the list
+  // recomputes.
+  const [dismissedNotifIds, setDismissedNotifIds] = useState(
+    () => new Set(JSON.parse(localStorage.getItem("dismissedNotifIds") || "[]"))
+  );
   const [toast,          setToast]          = useState(null);
   const toastTimerRef    = useRef(null);
   const notifSeenRef     = useRef(new Set(JSON.parse(localStorage.getItem("notifSeen") || "[]")));
@@ -217,7 +224,12 @@ export default function CounselorDashboard() {
     toastTimerRef.current = setTimeout(() => setToast(null), 5000);
   }, []);
 
-  const dismissNotif = (id) => setNotifs(prev => prev.filter(n => n.id !== id));
+  const dismissNotif = (id) => setDismissedNotifIds(prev => {
+    const next = new Set(prev);
+    next.add(id);
+    localStorage.setItem("dismissedNotifIds", JSON.stringify([...next]));
+    return next;
+  });
 
   // Check for new/changed appointments and push to the TOP of the feed
   const checkNotifications = useCallback(() => {
@@ -257,16 +269,8 @@ export default function CounselorDashboard() {
     });
 
     if (incoming.length > 0) {
-      // Newest at the top — prepend incoming (sorted newest-first within
-      // batch), and drop any older notification for the SAME appointment —
-      // e.g. once one goes from "overdue" to "missed", the stale overdue
-      // card for it shouldn't keep sitting in the feed alongside the new one.
-      const incomingApptIds = new Set(incoming.map(n => String(n.appt._id)));
-      setNotifs(prev => [
-        ...incoming.reverse(),
-        ...prev.filter(n => !(n.appt && incomingApptIds.has(String(n.appt._id)))),
-      ]);
-
+      // The panel itself reads live appointment state (see liveAllNotifs
+      // etc. below), so this only needs to drive the pop-up toast.
       if (incoming.length === 1) {
         showToast(incoming[0]);
       } else {
@@ -352,7 +356,6 @@ export default function CounselorDashboard() {
         // not when this poll happened to notice it, so "X ago" stays accurate.
         const chatNotif = { id: key, kind: "chat", name: conv.studentName, roomId: conv.roomId,
           unreadCount: conv.unread, lastMessage: conv.lastMessage, addedAt: conv.lastAt ? new Date(conv.lastAt) : new Date() };
-        setNotifs(p => [chatNotif, ...p.filter(n => !(n.kind === "chat" && n.roomId === conv.roomId))]);
         showToast(chatNotif);
       }
       if (conv.unread !== prevSeen) {
@@ -436,7 +439,6 @@ export default function CounselorDashboard() {
   };
 
   const selectConversation = (conv) => {
-    setNotifs(prev => prev.filter(n => !(n.kind === "chat" && n.roomId === conv.roomId)));
     chatNotifSeenRef.current[conv.roomId] = 0;
     localStorage.setItem("chatNotifSeen", JSON.stringify(chatNotifSeenRef.current));
     setChatRoom(conv.roomId);
@@ -660,6 +662,63 @@ export default function CounselorDashboard() {
 
   /* ── mood analytics ── */
   const totalMoods = analytics?.moods?.reduce((s, m) => s + m.count, 0) || 0;
+
+  /* ── notification panel — computed LIVE from current appointment/
+     conversation state on every render, instead of an event log that only
+     ever captured a status change once and then forgot it existed the
+     moment the page reloaded. `dismissedNotifIds` (persisted) is what makes
+     a dismissal stick instead of the item reappearing on the next recompute. ── */
+  const notifNameFor = (a) => typeof a.studentId === "object" ? (a.studentId.name || "Student") : "Student";
+  const notifRoomFor = (a) => typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+
+  const liveMissedNotifs = apptList
+    .filter(a => a.scheduleDate && a.studentId && a.status === "MISSED")
+    .map(a => ({
+      id: `missed_${a._id}`, kind: "missed", appt: a, name: notifNameFor(a), roomId: notifRoomFor(a),
+      addedAt: a.missedAt ? new Date(a.missedAt) : new Date(a.scheduleDate),
+    }))
+    .sort((a, b) => b.addedAt - a.addedAt);
+
+  const liveCancelledNotifs = apptList
+    .filter(a => a.scheduleDate && a.studentId && a.status === "CANCELLED")
+    .map(a => ({
+      id: `cancelled_${a._id}`, kind: "cancelled", appt: a, name: notifNameFor(a), roomId: notifRoomFor(a),
+      reason: a.cancelReason,
+      addedAt: a.cancelledAt ? new Date(a.cancelledAt) : new Date(a.scheduleDate),
+    }))
+    .sort((a, b) => b.addedAt - a.addedAt);
+
+  const liveChatNotifs = conversations
+    .filter(c => c.unread > 0 && c.lastSenderId && c.lastSenderId !== "system")
+    .map(c => ({
+      id: `chat_${c.roomId}_${c.lastAt}`, kind: "chat", name: c.studentName, roomId: c.roomId,
+      unreadCount: c.unread, lastMessage: c.lastMessage,
+      addedAt: c.lastAt ? new Date(c.lastAt) : new Date(),
+    }))
+    .sort((a, b) => b.addedAt - a.addedAt);
+
+  const liveActiveAppts = apptList
+    .filter(a => a.scheduleDate && a.studentId && !["CANCELLED", "MISSED"].includes(a.status))
+    .map(a => ({ id: `live_${a._id}`, appt: a, name: notifNameFor(a), addedAt: new Date() }));
+
+  const liveUpcomingNotifs = liveActiveAppts
+    .filter(n => n.appt.status === "PENDING")
+    .sort((a, b) => new Date(a.appt.scheduleDate) - new Date(b.appt.scheduleDate));
+
+  const liveDoneNotifs = liveActiveAppts
+    .filter(n => ["DONE", "ONGOING"].includes(n.appt.status))
+    .sort((a, b) => new Date(b.appt.scheduleDate) - new Date(a.appt.scheduleDate));
+
+  // "All" = actionable items — missed/cancelled/unread chats, plus pending
+  // appointments that are imminent or overdue (the Upcoming tab is the
+  // comprehensive list of every pending appointment regardless of urgency).
+  const liveUrgentPendingNotifs = liveUpcomingNotifs.filter(n =>
+    Math.round((new Date(n.appt.scheduleDate) - new Date()) / 60000) <= 60
+  );
+  const liveAllNotifs = [...liveMissedNotifs, ...liveCancelledNotifs, ...liveChatNotifs, ...liveUrgentPendingNotifs]
+    .filter(n => !dismissedNotifIds.has(n.id))
+    .sort((a, b) => b.addedAt - a.addedAt);
+  const notifBadgeCount = liveAllNotifs.length;
 
   // Renders one notification card — shared by the full panel list and the
   // corner toast, so both always look identical. `dismissible` adds a
@@ -905,8 +964,8 @@ export default function CounselorDashboard() {
           <span style={{ flex: 1, fontSize: "13px", color: "rgba(255,255,255,0.75)", fontFamily: "'Poppins',sans-serif" }}>
             Notifications
           </span>
-          {notifs.length > 0 && (
-            <span style={s.notifBadge}>{notifs.length > 99 ? "99+" : notifs.length}</span>
+          {notifBadgeCount > 0 && (
+            <span style={s.notifBadge}>{notifBadgeCount > 99 ? "99+" : notifBadgeCount}</span>
           )}
         </button>
 
@@ -1978,12 +2037,17 @@ export default function CounselorDashboard() {
             <div style={s.notifPanelHeader}>
               <div>
                 <div style={s.notifPanelTitle}>🔔 Notifications</div>
-                <div style={s.notifPanelSub}>{notifs.length} total · newest on top</div>
+                <div style={s.notifPanelSub}>{notifBadgeCount} total · newest on top</div>
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                {notifs.length > 0 && (
+                {notifBadgeCount > 0 && (
                   <button
-                    onClick={() => { setNotifs([]); setNotifFilter("all"); }}
+                    onClick={() => {
+                      const ids = [...dismissedNotifIds, ...liveAllNotifs.map(n => n.id)];
+                      setDismissedNotifIds(new Set(ids));
+                      localStorage.setItem("dismissedNotifIds", JSON.stringify(ids));
+                      setNotifFilter("all");
+                    }}
                     style={{ ...s.notifClose, width: "auto", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", fontFamily: "'Poppins',sans-serif" }}
                   >
                     Clear all
@@ -2018,47 +2082,25 @@ export default function CounselorDashboard() {
 
             <div style={s.notifList}>
               {(() => {
-                let filtered;
-                if (notifFilter === "upcoming" || notifFilter === "done") {
-                  // Live view computed straight from current appointment state —
-                  // the event log only records one-time status *changes*, so an
-                  // appointment that was booked days out would never show up here
-                  // just because it happened to still be a plain status change.
-                  const now = new Date();
-                  filtered = apptList
-                    .filter(a => a.scheduleDate && a.studentId && !["CANCELLED", "MISSED"].includes(a.status))
-                    .map(a => ({
-                      id: `live_${a._id}`,
-                      appt: a,
-                      name: typeof a.studentId === "object" ? (a.studentId.name || "Student") : "Student",
-                      addedAt: now,
-                    }))
-                    .filter(n => notifFilter === "upcoming"
-                      ? n.appt.status === "PENDING"
-                      : ["DONE", "ONGOING"].includes(n.appt.status))
-                    .sort((a, b) => new Date(a.appt.scheduleDate) - new Date(b.appt.scheduleDate));
-                } else {
-                  filtered = notifs.filter(n => {
-                    if (notifFilter === "all")       return true;
-                    if (notifFilter === "messages")  return n.kind === "chat";
-                    if (notifFilter === "missed")    return n.kind === "missed";
-                    if (notifFilter === "cancelled") return n.kind === "cancelled";
-                    return true;
-                  });
-                }
+                // Upcoming/Done are comprehensive lists (every pending or
+                // finished appointment), not dismissable alerts, so they
+                // ignore dismissedNotifIds and never show a ✕.
+                let filtered, dismissible;
+                if (notifFilter === "upcoming")      { filtered = liveUpcomingNotifs; dismissible = false; }
+                else if (notifFilter === "done")     { filtered = liveDoneNotifs;     dismissible = false; }
+                else if (notifFilter === "messages") { filtered = liveChatNotifs.filter(n => !dismissedNotifIds.has(n.id));      dismissible = true; }
+                else if (notifFilter === "missed")   { filtered = liveMissedNotifs.filter(n => !dismissedNotifIds.has(n.id));    dismissible = true; }
+                else if (notifFilter === "cancelled"){ filtered = liveCancelledNotifs.filter(n => !dismissedNotifIds.has(n.id)); dismissible = true; }
+                else                                 { filtered = liveAllNotifs; dismissible = true; }
 
                 if (filtered.length === 0) return (
                   <div style={s.notifEmpty}>
-                    <span style={{ fontSize: "36px" }}>{notifs.length === 0 ? "🔔" : "🔍"}</span>
-                    <p style={s.notifEmptyText}>{notifs.length === 0 ? "No notifications yet" : "Nothing here"}</p>
+                    <span style={{ fontSize: "36px" }}>{notifBadgeCount === 0 ? "🔔" : "🔍"}</span>
+                    <p style={s.notifEmptyText}>{notifBadgeCount === 0 ? "No notifications yet" : "Nothing here"}</p>
                   </div>
                 );
 
-                // Live-computed tabs (Upcoming/Done) are recalculated from
-                // current appointment state every render, so dismissing one
-                // wouldn't stick — only offer the ✕ on the real notif log.
-                const isLiveTab = notifFilter === "upcoming" || notifFilter === "done";
-                return filtered.map(n => renderNotifCard(n, { dismissible: !isLiveTab }));
+                return filtered.map(n => renderNotifCard(n, { dismissible }));
               })(/* end IIFE */)}
             </div>
           </div>
