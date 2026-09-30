@@ -384,8 +384,15 @@ exports.createAppointment = async (req, res) => {
       }
       scheduleDate = d;
     } else {
-      const daysOut = severity === "HIGH" ? 1 : severity === "MEDIUM" ? 3 : 5;
-      scheduleDate = await findNextAvailableSlot(daysOut, durationMinutes);
+      // Scheduling priority by risk: HIGH -> earliest vacant slot (today if
+      // still open), MEDIUM -> a day or two out, LOW -> 2-3 days out.
+      if (severity === "HIGH") {
+        scheduleDate = await findNextAvailableSlotToday(durationMinutes);
+        if (!scheduleDate) scheduleDate = await findNextAvailableSlot(1, durationMinutes);
+      } else {
+        const daysOut = severity === "MEDIUM" ? 1 : 2;
+        scheduleDate = await findNextAvailableSlot(daysOut, durationMinutes);
+      }
     }
 
     const appointment = await Appointment.create({

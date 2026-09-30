@@ -186,8 +186,8 @@ const createAutoAppointment = async (studentId, severity, source, counselorChoic
         scheduleDate = await findNextAvailableSlot(1, durationMinutes);
       }
     } else {
-      // MEDIUM — not urgent enough to need a same-day slot.
-      scheduleDate = await findNextAvailableSlot(3, durationMinutes);
+      // MEDIUM — not urgent enough to need a same-day slot; a day or two out.
+      scheduleDate = await findNextAvailableSlot(1, durationMinutes);
     }
 
     const appointment = await Appointment.create({
