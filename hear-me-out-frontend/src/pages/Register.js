@@ -14,8 +14,15 @@ export default function Register() {
   const [error,     setError]     = useState("");
   const navigate = useNavigate();
 
+  // Digits only, capped at 11 — matches the school's ID format (e.g. 02000351322).
+  const handleStudentIdChange = (v) => setStudentId(v.replace(/\D/g, "").slice(0, 11));
+
   const handleRegister = async () => {
     if (!name || !email || !password || !studentId) { setError("Please fill in all fields."); return; }
+    if (!/^0\d{10}$/.test(studentId)) {
+      setError("Student ID must be 11 digits and start with 0 (e.g. 02000351322).");
+      return;
+    }
     setError("");
     try {
       setLoading(true);
@@ -33,7 +40,7 @@ export default function Register() {
   const fields = [
     { id:"name",  label:"Full name",      icon:"👤", type:"text",     ph:"Your full name",       val:name,      set:setName },
     { id:"email", label:"Email address",  icon:"✉️", type:"email",    ph:"you@university.edu",   val:email,     set:setEmail },
-    { id:"sid",   label:"Student ID",     icon:"🪪", type:"text",     ph:"e.g. 24-0001",          val:studentId, set:setStudentId },
+    { id:"sid",   label:"Student ID",     icon:"🪪", type:"text",     ph:"02000351322",           val:studentId, set:handleStudentIdChange },
     { id:"pw",    label:"Password",       icon:"🔒", type:"password", ph:"Create a password",    val:password,  set:setPassword },
   ];
 
@@ -63,6 +70,8 @@ export default function Register() {
                   onFocus={() => setFocused(f.id)}
                   onBlur={() => setFocused(null)}
                   autoCapitalize={f.id === "name" ? "words" : "none"}
+                  inputMode={f.id === "sid" ? "numeric" : undefined}
+                  maxLength={f.id === "sid" ? 11 : undefined}
                   style={{ ...s.input, flex: 1 }}
                 />
                 {f.id === "pw" && (

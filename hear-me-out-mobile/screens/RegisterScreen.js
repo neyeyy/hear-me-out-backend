@@ -36,8 +36,15 @@ export default function RegisterScreen({ navigation }) {
     return () => { onShow.remove(); onHide.remove(); };
   }, []);
 
+  // Digits only, capped at 11 — matches the school's ID format (e.g. 02000351322).
+  const handleStudentIdChange = (v) => setStudentId(v.replace(/\D/g, "").slice(0, 11));
+
   const handleRegister = async () => {
     if (!name || !email || !password || !studentId) { setError("Please fill in all fields."); return; }
+    if (!/^0\d{10}$/.test(studentId)) {
+      setError("Student ID must be 11 digits and start with 0 (e.g. 02000351322).");
+      return;
+    }
     setError("");
     try {
       setLoading(true);
@@ -118,13 +125,14 @@ export default function RegisterScreen({ navigation }) {
               <View style={[styles.inputRow, focusedField === "studentId" && styles.inputRowFocused]}>
                 <Ionicons name="card-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
-                  placeholder="e.g. 24-0001"
+                  placeholder="02000351322"
                   placeholderTextColor="#9CA3AF"
                   value={studentId}
-                  onChangeText={setStudentId}
+                  onChangeText={handleStudentIdChange}
                   onFocus={() => setFocusedField("studentId")}
                   onBlur={() => setFocusedField(null)}
-                  autoCapitalize="characters"
+                  keyboardType="number-pad"
+                  maxLength={11}
                   style={styles.input}
                 />
               </View>

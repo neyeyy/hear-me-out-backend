@@ -11,6 +11,9 @@ exports.register = async (req, res) => {
       return res.json({ success: false, message: "All fields are required" });
     if (password.length < 6)
       return res.json({ success: false, message: "Password must be at least 6 characters" });
+    // Student ID: exactly 11 digits, starting with 0 (e.g. 02000351322)
+    if (!/^0\d{10}$/.test(studentId.trim()))
+      return res.json({ success: false, message: "Student ID must be 11 digits and start with 0 (e.g. 02000351322)" });
 
     const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
     if (existingUser)
