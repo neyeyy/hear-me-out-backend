@@ -783,6 +783,10 @@ export default function StudentDashboardScreen({ navigation, route }) {
   /* ── PICK MOOD ── */
   /* ── CHOICE STEP — reopening the app, no reassessment due yet ── */
   if (step === "choice") {
+    // Retaking the assessment while a session is already scheduled just
+    // reuses that appointment — voluntary retakes only make sense when the
+    // student doesn't already have one pending.
+    const hasActiveAppt = appointment && (appointment.status === "PENDING" || appointment.status === "ONGOING");
     return (
       <View style={{ flex:1 }}>
         <StatusBar barStyle="light-content" />
@@ -818,14 +822,24 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 </LinearGradient>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => navigation.replace("Assessment")} activeOpacity={0.88}>
-                <LinearGradient colors={["#6C63FF","#764ba2"]} start={{x:0,y:0}} end={{x:1,y:1}} style={s.choiceCard}>
-                  <Text style={s.choiceCardEmoji}>🧠</Text>
+              <TouchableOpacity
+                onPress={() => navigation.replace("Assessment")}
+                activeOpacity={0.88}
+                disabled={hasActiveAppt}
+              >
+                <LinearGradient
+                  colors={hasActiveAppt ? ["#6b6b7a","#54545f"] : ["#6C63FF","#764ba2"]}
+                  start={{x:0,y:0}} end={{x:1,y:1}}
+                  style={[s.choiceCard, hasActiveAppt && { opacity:0.6 }]}
+                >
+                  <Text style={s.choiceCardEmoji}>{hasActiveAppt ? "🔒" : "🧠"}</Text>
                   <View style={{ flex:1 }}>
                     <Text style={s.choiceCardTitle}>Take the Assessment</Text>
-                    <Text style={s.choiceCardSub}>PHQ-9 & GAD-7 screening</Text>
+                    <Text style={s.choiceCardSub}>
+                      {hasActiveAppt ? "You already have a scheduled session" : "PHQ-9 & GAD-7 screening"}
+                    </Text>
                   </View>
-                  <Text style={s.choiceCardArrow}>→</Text>
+                  {!hasActiveAppt && <Text style={s.choiceCardArrow}>→</Text>}
                 </LinearGradient>
               </TouchableOpacity>
             </ScrollView>
