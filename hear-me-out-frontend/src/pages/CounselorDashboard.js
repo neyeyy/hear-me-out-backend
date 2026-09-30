@@ -217,6 +217,8 @@ export default function CounselorDashboard() {
     toastTimerRef.current = setTimeout(() => setToast(null), 5000);
   }, []);
 
+  const dismissNotif = (id) => setNotifs(prev => prev.filter(n => n.id !== id));
+
   // Check for new/changed appointments and push to the TOP of the feed
   const checkNotifications = useCallback(() => {
     const now = new Date();
@@ -255,8 +257,15 @@ export default function CounselorDashboard() {
     });
 
     if (incoming.length > 0) {
-      // Newest at the top — prepend incoming (sorted newest-first within batch)
-      setNotifs(prev => [...incoming.reverse(), ...prev]);
+      // Newest at the top — prepend incoming (sorted newest-first within
+      // batch), and drop any older notification for the SAME appointment —
+      // e.g. once one goes from "overdue" to "missed", the stale overdue
+      // card for it shouldn't keep sitting in the feed alongside the new one.
+      const incomingApptIds = new Set(incoming.map(n => String(n.appt._id)));
+      setNotifs(prev => [
+        ...incoming.reverse(),
+        ...prev.filter(n => !(n.appt && incomingApptIds.has(String(n.appt._id)))),
+      ]);
 
       if (incoming.length === 1) {
         showToast(incoming[0]);
@@ -653,14 +662,23 @@ export default function CounselorDashboard() {
   const totalMoods = analytics?.moods?.reduce((s, m) => s + m.count, 0) || 0;
 
   // Renders one notification card — shared by the full panel list and the
-  // corner toast, so both always look identical.
-  const renderNotifCard = (n) => {
+  // corner toast, so both always look identical. `dismissible` adds a
+  // per-card ✕ (only makes sense for the panel — the toast has its own).
+  const renderNotifCard = (n, { dismissible = false } = {}) => {
     const now = new Date();
     const secAgo = Math.floor((now - new Date(n.addedAt)) / 1000);
     const relAge = secAgo < 60 ? "just now"
       : secAgo < 3600 ? `${Math.floor(secAgo / 60)}m ago`
       : secAgo < 86400 ? `${Math.floor(secAgo / 3600)}h ago`
       : new Date(n.addedAt).toLocaleDateString();
+
+    const dismissBtn = dismissible && (
+      <button
+        onClick={(e) => { e.stopPropagation(); dismissNotif(n.id); }}
+        style={s.notifItemDismiss}
+        title="Dismiss"
+      >✕</button>
+    );
 
     const goToChat = (e) => {
       e?.stopPropagation(); // don't let the toast wrapper's click reopen the panel
@@ -680,6 +698,7 @@ export default function CounselorDashboard() {
     if (n.kind === "chat") {
       return (
         <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #5B6BD8" }}>
+          {dismissBtn}
           <div style={s.notifItemTop}>
             <span style={s.notifItemName}>💬 {n.name}</span>
             <span style={{ ...s.notifItemTag, background: "#EEF0FD", color: "#5B6BD8" }}>
@@ -704,6 +723,7 @@ export default function CounselorDashboard() {
     if (n.kind === "missed") {
       return (
         <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #9CA3AF" }}>
+          {dismissBtn}
           <div style={s.notifItemTop}>
             <span style={s.notifItemName}>⏰ {n.name}</span>
             <span style={{ ...s.notifItemTag, background: "#F1F2F6", color: "#7B7F9E" }}>
@@ -731,6 +751,7 @@ export default function CounselorDashboard() {
     if (n.kind === "cancelled") {
       return (
         <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #F87171" }}>
+          {dismissBtn}
           <div style={s.notifItemTop}>
             <span style={s.notifItemName}>🚫 {n.name}</span>
             <span style={{ ...s.notifItemTag, background: "#FFF0EE", color: "#F87171" }}>
@@ -777,6 +798,7 @@ export default function CounselorDashboard() {
 
     return (
       <div key={n.id} style={{ ...s.notifItem, borderLeft: `4px solid ${meta.color}` }}>
+        {dismissBtn}
         <div style={s.notifItemTop}>
           <span style={s.notifItemName}>{n.name}</span>
           <span style={{ ...s.notifItemTag, background: meta.bg, color: meta.color }}>
@@ -2032,7 +2054,11 @@ export default function CounselorDashboard() {
                   </div>
                 );
 
-                return filtered.map(renderNotifCard);
+                // Live-computed tabs (Upcoming/Done) are recalculated from
+                // current appointment state every render, so dismissing one
+                // wouldn't stick — only offer the ✕ on the real notif log.
+                const isLiveTab = notifFilter === "upcoming" || notifFilter === "done";
+                return filtered.map(n => renderNotifCard(n, { dismissible: !isLiveTab }));
               })(/* end IIFE */)}
             </div>
           </div>
@@ -2940,9 +2966,17 @@ const s = {
   notifItem: {
     background: "#fff",
     borderRadius: "12px",
-    padding: "14px 14px 14px 16px",
+    padding: "14px 30px 14px 16px",
     boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
     borderLeft: "4px solid #5B6BD8",
+    position: "relative",
+  },
+  notifItemDismiss: {
+    position: "absolute", top: "10px", right: "10px",
+    width: "20px", height: "20px", borderRadius: "50%",
+    border: "none", background: "#F0F2F8", color: "#7B7F9E",
+    fontSize: "11px", lineHeight: "20px", padding: 0,
+    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
   },
   notifItemTop: {
     display: "flex", alignItems: "center",
