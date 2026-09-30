@@ -467,24 +467,29 @@ export default function CounselorDashboard() {
     }, 1000);
   };
 
+  // Shows just the time for today's messages; once a message is over a day
+  // old, the date is shown beside the time instead of the time alone.
   const chatFormatTime = (ts) => {
     if (!ts) return "";
-    const d = new Date(ts); const now = new Date();
-    if (d.toDateString() === now.toDateString())
-      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const d = new Date(ts);
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === new Date().toDateString()) return time;
+    const date = d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return `${date} · ${time}`;
   };
 
   const formatRelativeTime = (ts) => {
     if (!ts) return "";
-    const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+    const d = new Date(ts);
+    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
     if (mins < 1) return "just now";
     if (mins < 60) return `${mins}m ago`;
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.floor(hrs / 24);
-    if (days < 7) return `${days}d ago`;
-    return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
+    // Over a day old — show the date beside the time instead of a vague "Xd ago".
+    const date = d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `${date} · ${time}`;
   };
 
   const openReschedule = (appt) => {
@@ -1913,7 +1918,7 @@ export default function CounselorDashboard() {
                               <div style={isMe ? s.msMyBubble : s.msTheirBubble}>
                                 <span style={s.msMsgText}>{msg.message}</span>
                                 <div style={s.msMsgMeta}>
-                                  <span>{new Date(msg.createdAt).toLocaleTimeString([],{ hour:"2-digit", minute:"2-digit" })}</span>
+                                  <span>{chatFormatTime(msg.createdAt)}</span>
                                 </div>
                               </div>
                               {isMe && isLast && (
