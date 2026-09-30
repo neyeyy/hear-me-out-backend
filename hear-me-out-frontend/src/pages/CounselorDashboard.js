@@ -553,9 +553,14 @@ export default function CounselorDashboard() {
       const q = search.toLowerCase();
       const matchSearch = (s.name  || "").toLowerCase().includes(q) ||
                           (s.email || "").toLowerCase().includes(q);
+      // Severity and appointment status are independent facets — a MEDIUM
+      // student who missed their session is still a MEDIUM student, so the
+      // HIGH/MEDIUM/LOW filters don't exclude missed ones (that previously
+      // made the summary counts disagree with what the filter actually
+      // showed, since those counts are severity-only).
       const matchSev = sevFilter === "MISSED"
         ? appointments[s._id]?.status === "MISSED"
-        : s.severity === sevFilter && appointments[s._id]?.status !== "MISSED";
+        : s.severity === sevFilter;
       return matchSearch && matchSev;
     })
     .sort((a, b) => {
