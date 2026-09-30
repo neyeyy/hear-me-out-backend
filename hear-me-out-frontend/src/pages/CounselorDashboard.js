@@ -16,6 +16,9 @@ const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8", MISSED: 
 const SEV_BG    = { HIGH: "#FFF0EE", MEDIUM: "#FFF8EC", LOW: "#E6FAF7", MISSED: "#F1F2F6" };
 const SESSION_MINUTES = { HIGH: 60, MEDIUM: 60, LOW: 30 };
 const SEV_ORDER = { HIGH: 1, MEDIUM: 2, LOW: 3 };
+// "Pending" reads as "Upcoming" everywhere it's shown — matches the mobile app's wording.
+const STATUS_LABEL = { PENDING: "Upcoming" };
+const statusLabel = (status) => STATUS_LABEL[status] || status;
 
 const MOOD_META = {
   HAPPY:    { emoji: "😊", color: "#4ECDC4" },
@@ -1262,7 +1265,7 @@ export default function CounselorDashboard() {
                                       ? <span style={s.stDone}>✓ Session done</span>
                                       : app.status === "MISSED"
                                       ? <span style={{ ...s.stPending, color:"#9CA3AF", background:"#F1F2F6" }}>⚠ Missed</span>
-                                      : <span style={{ ...s.stPending, color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B", background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC" }}>{app.status}</span>
+                                      : <span style={{ ...s.stPending, color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B", background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC" }}>{statusLabel(app.status)}</span>
                                   ) : <span style={s.stNone}>No appointment</span>}
                                 </div>
                                 <div style={{ display:"flex", flexDirection:"column", gap:"6px", alignItems:"flex-end" }}>
@@ -1373,7 +1376,7 @@ export default function CounselorDashboard() {
                   {[
                     { label:"Total",     value:Object.keys(appointments).length, icon:"📋", color:"#5B6BD8" },
                     { label:"Completed", value:done,         icon:"✅", color:"#38C9B8" },
-                    { label:"Pending",   value:pending,      icon:"⏳", color:"#F9A72B" },
+                    { label:"Upcoming",  value:pending,      icon:"⏳", color:"#F9A72B" },
                     { label:"Ongoing",   value:ongoingCount, icon:"🔄", color:"#7C6FCD" },
                   ].map(item => (
                     <div key={item.label} style={{ ...s.sessionCard, borderLeft:`4px solid ${item.color}` }}>
@@ -1651,7 +1654,7 @@ export default function CounselorDashboard() {
                                       {appt.severity}
                                     </div>
                                     <div style={{ ...s.apptChipMeta, color: appt.status === "DONE" ? "#38C9B8" : appt.status === "ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
-                                      {appt.status}
+                                      {statusLabel(appt.status)}
                                     </div>
                                   </div>
                                 );
