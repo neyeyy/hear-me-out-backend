@@ -590,8 +590,8 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   myBubble: {
-    backgroundColor: "#6C63FF", borderRadius: 18,
-    borderBottomRightRadius: 4, padding: 12, maxWidth: "72%",
+    backgroundColor: "#6C63FF", borderRadius: 20,
+    paddingVertical: 10, paddingHorizontal: 14, maxWidth: "80%",
     shadowColor: "#6C63FF", shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25, shadowRadius: 6, elevation: 3,
   },
