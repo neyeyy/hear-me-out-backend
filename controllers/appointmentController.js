@@ -536,7 +536,7 @@ exports.getAppointmentHistory = async (req, res) => {
 exports.updateAppointmentStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, scheduleDate, isUrgent } = req.body || {};
+    const { status, scheduleDate } = req.body || {};
 
     const existingAppt = await Appointment.findById(id);
     if (!existingAppt) {
@@ -569,16 +569,6 @@ exports.updateAppointmentStatus = async (req, res) => {
         return res.json({ success: false, message: "That day is fully booked (max 4 students). Please pick another date." });
       }
       update.scheduleDate = d;
-    }
-
-    // Urgent flag: bump to earliest available slot (next business day)
-    if (isUrgent === true) {
-      update.isUrgent = true;
-      const urgentSlot = await findNextAvailableSlot(1, durationMinutes);
-      update.scheduleDate = urgentSlot;
-      update.status = "PENDING";
-    } else if (isUrgent === false) {
-      update.isUrgent = false;
     }
 
     if (Object.keys(update).length === 0) {

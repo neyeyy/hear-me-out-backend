@@ -98,7 +98,6 @@ export default function CounselorDashboard() {
   const [chatInput,      setChatInput]      = useState("");
   const [chatTyping,     setChatTyping]     = useState(false);
   const [chatSearch,     setChatSearch]     = useState("");
-  const [urgentLoading,  setUrgentLoading]  = useState(null);
   // notifications
   const [notifOpen,      setNotifOpen]      = useState(false);
   const [notifs,         setNotifs]         = useState([]);
@@ -417,15 +416,6 @@ export default function CounselorDashboard() {
       await API.patch(`/appointments/${appointmentId}`, { status: "DONE" });
       fetchAppointments();
     } catch (e) { console.error(e.response?.data || e.message); }
-  };
-
-  const handleUrgent = async (appointmentId) => {
-    try {
-      setUrgentLoading(appointmentId);
-      await API.patch(`/appointments/${appointmentId}`, { isUrgent: true });
-      fetchAppointments();
-    } catch (e) { console.error(e.response?.data || e.message); }
-    finally { setUrgentLoading(null); }
   };
 
   const openChat = (student) => {
@@ -1744,16 +1734,6 @@ export default function CounselorDashboard() {
                     <div style={{ display:"flex", gap:"10px", marginTop:"14px", flexWrap:"wrap" }}>
                       <button onClick={handleReschedule} disabled={rescheduling} style={s.modalSaveBtn}>
                         {rescheduling ? "Saving…" : "Save Schedule"}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          await handleUrgent(rescheduleAppt._id);
-                          setRescheduleAppt(null);
-                        }}
-                        disabled={urgentLoading === rescheduleAppt?._id}
-                        style={{ ...s.modalSaveBtn, background:"linear-gradient(135deg,#F87171,#F9A72B)" }}
-                      >
-                        {urgentLoading === rescheduleAppt?._id ? "Setting…" : "🚨 Mark Urgent"}
                       </button>
                       <button onClick={() => { setRescheduleAppt(null); setRescheduleErr(""); }} style={s.modalCancelBtn}>Cancel</button>
                     </div>

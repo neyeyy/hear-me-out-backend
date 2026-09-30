@@ -24,7 +24,6 @@ const appointmentSchema = new mongoose.Schema({
   // Set once the "your appointment is starting now" grace-period alert has
   // been sent, so the sweep never sends it twice for the same appointment.
   startAlertSentAt: { type: Date, default: null },
-  isUrgent:     { type: Boolean, default: false },
   source:       { type: String, default: "assessment" },
 }, { timestamps: true });
 
