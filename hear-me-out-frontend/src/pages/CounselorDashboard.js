@@ -106,7 +106,9 @@ export default function CounselorDashboard() {
   const [toast,          setToast]          = useState(null);
   const toastTimerRef    = useRef(null);
   const notifSeenRef     = useRef(new Set(JSON.parse(localStorage.getItem("notifSeen") || "[]")));
-  const lastKnownUnreadRef = useRef({});
+  // Persisted (not just in-memory) so a page reload doesn't forget which
+  // unread bumps were already surfaced as a notification and re-pop them.
+  const chatNotifSeenRef = useRef(JSON.parse(localStorage.getItem("chatNotifSeen") || "{}"));
   const chatEndRef       = useRef(null);
   const chatRoomRef      = useRef(null);
   const schedInitRef     = useRef(false);
@@ -327,12 +329,17 @@ export default function CounselorDashboard() {
     return () => clearInterval(iv);
   }, [tab, loadConversations]);
 
-  // Detect new unread chat messages and push to notifications panel
+  // Detect new unread chat messages and push to notifications panel.
+  // Skips system-authored notices (missed/vacancy messages) — those already
+  // get their own correctly-labeled "missed"/"cancelled" notification cards,
+  // so surfacing them again here as if the student just messaged is wrong.
   const checkChatNotifications = useCallback(() => {
+    let changed = false;
     conversations.forEach(conv => {
-      const prev = lastKnownUnreadRef.current[conv.roomId] || 0;
-      if (conv.unread > prev) {
-        const key = `chat_${conv.roomId}_${Date.now()}`;
+      const prevSeen = chatNotifSeenRef.current[conv.roomId] || 0;
+      const isNewFromStudent = conv.unread > prevSeen && conv.lastSenderId && conv.lastSenderId !== "system";
+      if (isNewFromStudent) {
+        const key = `chat_${conv.roomId}_${conv.lastAt}`;
         // addedAt reflects when the message actually arrived (conv.lastAt),
         // not when this poll happened to notice it, so "X ago" stays accurate.
         const chatNotif = { id: key, kind: "chat", name: conv.studentName, roomId: conv.roomId,
@@ -340,8 +347,12 @@ export default function CounselorDashboard() {
         setNotifs(p => [chatNotif, ...p.filter(n => !(n.kind === "chat" && n.roomId === conv.roomId))]);
         showToast(chatNotif);
       }
-      lastKnownUnreadRef.current[conv.roomId] = conv.unread;
+      if (conv.unread !== prevSeen) {
+        chatNotifSeenRef.current[conv.roomId] = conv.unread;
+        changed = true;
+      }
     });
+    if (changed) localStorage.setItem("chatNotifSeen", JSON.stringify(chatNotifSeenRef.current));
   }, [conversations, showToast]);
 
   useEffect(() => { checkChatNotifications(); }, [checkChatNotifications]);
@@ -427,7 +438,8 @@ export default function CounselorDashboard() {
 
   const selectConversation = (conv) => {
     setNotifs(prev => prev.filter(n => !(n.kind === "chat" && n.roomId === conv.roomId)));
-    lastKnownUnreadRef.current[conv.roomId] = 0;
+    chatNotifSeenRef.current[conv.roomId] = 0;
+    localStorage.setItem("chatNotifSeen", JSON.stringify(chatNotifSeenRef.current));
     setChatRoom(conv.roomId);
     setChatStudent({ _id: conv.roomId, name: conv.studentName, email: conv.studentEmail });
     setChatMessages([]);

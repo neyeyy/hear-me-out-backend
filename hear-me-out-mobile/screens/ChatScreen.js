@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   FlatList, KeyboardAvoidingView, Platform, SafeAreaView, StatusBar,
-  Modal, ScrollView, ActivityIndicator, Animated,
+  Modal, ScrollView, ActivityIndicator, Animated, Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -14,6 +14,12 @@ import useDragToClose from "../hooks/useDragToClose";
 // Android it's a no-op, so the header sat under/behind the status bar
 // without this, making it hard to see and tap.
 const ANDROID_STATUS_BAR_PAD = Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 0;
+
+// A percentage maxWidth on a bubble whose direct parent has no explicit
+// width of its own resolves inconsistently in Yoga (RN's layout engine) —
+// different messages ended up with different effective caps, so bubbles
+// didn't line up on the same right edge. A fixed pixel value is deterministic.
+const BUBBLE_MAX_WIDTH = Math.round(Dimensions.get("window").width * 0.78);
 
 export default function ChatScreen({ navigation }) {
   const [message, setMessage] = useState("");
@@ -279,7 +285,7 @@ export default function ChatScreen({ navigation }) {
               <Text style={{ fontSize: 14 }}>👨‍⚕️</Text>
             </View>
           )}
-          <View>
+          <View style={{ alignItems: isMe ? "flex-end" : "flex-start" }}>
             <View style={isMe ? styles.myBubble : styles.theirBubble}>
               <Text style={isMe ? styles.myBubbleText : styles.theirBubbleText}>
                 {item.message}
@@ -590,15 +596,17 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   myBubble: {
+    alignSelf: "flex-end",
     backgroundColor: "#6C63FF", borderRadius: 20,
-    paddingVertical: 10, paddingHorizontal: 14, maxWidth: "80%",
+    paddingVertical: 10, paddingHorizontal: 14, maxWidth: BUBBLE_MAX_WIDTH,
     shadowColor: "#6C63FF", shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25, shadowRadius: 6, elevation: 3,
   },
   myBubbleText: { color: "#fff", fontSize: 14, lineHeight: 20 },
   theirBubble: {
+    alignSelf: "flex-start",
     backgroundColor: "#fff", borderRadius: 18,
-    borderBottomLeftRadius: 4, padding: 12, maxWidth: "72%",
+    borderBottomLeftRadius: 4, padding: 12, maxWidth: BUBBLE_MAX_WIDTH,
     shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
   },
