@@ -1898,14 +1898,18 @@ export default function CounselorDashboard() {
                       {chatMessages.map((msg, i) => {
                         const isMe   = String(msg.senderId) === String(counselorId);
                         const isLast = i === chatMessages.length - 1;
+                        // Messenger-style grouping: consecutive messages from
+                        // the same sender sit closer together.
+                        const nextMsg = chatMessages[i + 1];
+                        const groupedWithNext = nextMsg && String(nextMsg.senderId) === String(msg.senderId);
                         return (
-                          <div key={i} style={{ display:"flex", justifyContent: isMe ? "flex-end" : "flex-start", marginBottom:"6px", alignItems:"flex-end", gap:"8px" }}>
+                          <div key={i} style={{ display:"flex", justifyContent: isMe ? "flex-end" : "flex-start", marginBottom: groupedWithNext ? "3px" : "6px", alignItems:"flex-end", gap:"8px" }}>
                             {!isMe && (
                               <div style={s.msMsgAva}>
                                 {chatStudent?.name?.[0]?.toUpperCase() || "🎓"}
                               </div>
                             )}
-                            <div>
+                            <div style={{ display:"flex", flexDirection:"column", alignItems: isMe ? "flex-end" : "flex-start", maxWidth:"78%" }}>
                               <div style={isMe ? s.msMyBubble : s.msTheirBubble}>
                                 <span style={s.msMsgText}>{msg.message}</span>
                                 <div style={s.msMsgMeta}>
@@ -2813,14 +2817,14 @@ const s = {
   msMyBubble: {
     background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
     color: "#fff", padding: "10px 14px",
-    borderRadius: "18px 18px 4px 18px",
-    maxWidth: "70%", boxShadow: "0 2px 10px rgba(91,107,216,0.3)",
+    borderRadius: "20px",
+    boxShadow: "0 2px 10px rgba(91,107,216,0.3)",
   },
   msTheirBubble: {
     background: "#fff", color: "#2D3047",
     padding: "10px 14px",
     borderRadius: "18px 18px 18px 4px",
-    maxWidth: "70%", boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
   },
   msMsgText: {
     display: "block", fontSize: "14px",
