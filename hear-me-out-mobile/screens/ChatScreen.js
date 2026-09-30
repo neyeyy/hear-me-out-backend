@@ -277,9 +277,13 @@ export default function ChatScreen({ navigation }) {
     const isLast = index === messages.length - 1;
     const action = getSystemAction(item);
     const showAction = action && !rescheduledIds[item._id];
+    // Messenger-style grouping: consecutive messages from the same sender
+    // sit closer together, with the normal gap only before a sender change.
+    const nextItem = messages[index + 1];
+    const groupedWithNext = nextItem && String(nextItem.senderId) === String(item.senderId);
     return (
       <View>
-        <View style={[styles.msgRow, isMe ? styles.msgRowMe : styles.msgRowThem]}>
+        <View style={[styles.msgRow, isMe ? styles.msgRowMe : styles.msgRowThem, groupedWithNext && styles.msgRowGrouped]}>
           {!isMe && (
             <View style={styles.theirAvatar}>
               <Text style={{ fontSize: 14 }}>👨‍⚕️</Text>
@@ -588,6 +592,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "flex-end",
     marginBottom: 8, gap: 6,
   },
+  msgRowGrouped: { marginBottom: 3 },
   msgRowMe:   { justifyContent: "flex-end" },
   msgRowThem: { justifyContent: "flex-start" },
   theirAvatar: {
