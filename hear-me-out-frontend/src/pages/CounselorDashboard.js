@@ -2813,6 +2813,9 @@ const s = {
   msMsgText: {
     display: "block", fontSize: "14px",
     lineHeight: 1.6, fontFamily: "'Lato',sans-serif",
+    // Without this, a long unbroken string (no spaces) overflows past the
+    // bubble instead of wrapping onto the next line.
+    overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "pre-wrap",
   },
   msMsgMeta: {
     display: "flex", justifyContent: "flex-end",

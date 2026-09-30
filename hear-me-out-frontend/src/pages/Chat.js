@@ -1074,6 +1074,7 @@ const s = {
     fontSize:   "15px",
     lineHeight: 1.6,
     fontFamily: "'Lato',sans-serif",
+    overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "pre-wrap",
   },
   msgMeta: {
     display:         "flex",
