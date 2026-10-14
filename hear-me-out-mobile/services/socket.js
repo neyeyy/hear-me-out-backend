@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 // A single socket instance for the whole app — created once, shared by any
 // screen that needs it (chat, presence, live appointment updates), instead
 // of each screen opening its own connection.
-const socket = io("https://hear-me-out-backend-production-8100.up.railway.app");
+const socket = io("https://hear-me-out-backend.onrender.com");
 
 let currentIdentity = null;
 

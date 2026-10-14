@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 import logo from "../logo.png";
 
-const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend-production-8100.up.railway.app", {
+const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend.onrender.com", {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionAttempts: Infinity,
