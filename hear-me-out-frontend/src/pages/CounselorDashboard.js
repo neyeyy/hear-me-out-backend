@@ -4,15 +4,11 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 import logo from "../logo.png";
 
-// The server rejects any connection without a valid JWT — `auth` as a
-// function (not a plain object) is re-read on every connect/reconnect
-// attempt, so it always sends whatever token is currently in localStorage.
 const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend.onrender.com", {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
-  auth: (cb) => cb({ token: localStorage.getItem("token") }),
 });
 
 /* ─── constants ──────────────────────────────────────────── */
