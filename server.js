@@ -8,6 +8,7 @@ dotenv.config();
 
 const http = require('http');
 const { Server } = require('socket.io');
+const jwt = require('jsonwebtoken');
 
 const Message = require('./models/Message');
 const { checkMissedAppointments, checkStartingAppointments, checkVacancyOffers } = require('./controllers/appointmentController');
@@ -37,6 +38,27 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 app.set('io', io); // lets route handlers push live updates (req.app.get('io'))
+
+// Every connection must present a valid JWT (same one used for the REST
+// API) via the handshake, otherwise the socket is rejected outright —
+// without this, anyone could join any chat room and read/send messages
+// as anyone just by knowing (or guessing) a user id.
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error("No token provided"));
+    socket.user = jwt.verify(token, process.env.JWT_SECRET); // { id, role }
+    next();
+  } catch (err) {
+    next(new Error("Invalid token"));
+  }
+});
+
+// A student may only join/act on their own room (roomId === their user id);
+// a counselor may join/act on any room.
+function canAccessRoom(socket, roomId) {
+  return !!roomId && (socket.user?.role === "counselor" || String(roomId) === String(socket.user?.id));
+}
 
 // MIDDLEWARE
 app.use(cors());
@@ -100,15 +122,18 @@ function removeSocketPresence(socket) {
 io.on('connection', (socket) => {
   console.log("🟢 User connected:", socket.id);
 
-  socket.on('identify', ({ userId, role }) => {
-    if (!userId) return;
-    socketUserMap.set(socket.id, String(userId));
-    const existing = onlineUsers.get(String(userId));
+  // Identity comes from the verified token, not whatever the client claims
+  // to be — the event is just a "register my presence now" trigger.
+  socket.on('identify', () => {
+    const userId = String(socket.user.id);
+    const role = socket.user.role;
+    socketUserMap.set(socket.id, userId);
+    const existing = onlineUsers.get(userId);
     if (existing) {
       existing.sockets.add(socket.id);
-      if (role) existing.role = role;
+      existing.role = role;
     } else {
-      onlineUsers.set(String(userId), { role, sockets: new Set([socket.id]) });
+      onlineUsers.set(userId, { role, sockets: new Set([socket.id]) });
     }
     broadcastOnlineList();
   });
@@ -128,7 +153,7 @@ io.on('connection', (socket) => {
 
   socket.on('joinRoom', async (roomId) => {
     try {
-      if (!roomId) return;
+      if (!canAccessRoom(socket, roomId)) return;
       socket.join(String(roomId));
       const messages = await Message.find({ roomId: String(roomId) })
         .sort({ createdAt: 1 });
@@ -140,10 +165,14 @@ io.on('connection', (socket) => {
 
   socket.on('sendMessage', async (data) => {
     try {
-      if (!data.roomId || !data.message || !data.senderId) return;
+      if (!data?.roomId || !data?.message || !canAccessRoom(socket, data.roomId)) return;
+      // senderId comes from the verified connection, not the client payload
+      // — otherwise anyone could send a message that looks like it's from
+      // someone else.
+      const senderId = String(socket.user.id);
       const newMessage = await Message.create({
         roomId:   String(data.roomId),
-        senderId: String(data.senderId),
+        senderId,
         message:  data.message,
         seen:     false
       });
@@ -151,18 +180,20 @@ io.on('connection', (socket) => {
       // Room-scoped emit above only reaches sockets that already joined that
       // room (i.e. someone with that chat open) — this global ping lets any
       // connected dashboard refresh its conversation list immediately too.
-      io.emit('newMessageAlert', { roomId: String(data.roomId), senderId: String(data.senderId) });
+      io.emit('newMessageAlert', { roomId: String(data.roomId), senderId });
     } catch (error) {
       console.log("❌ Chat error:", error.message);
     }
   });
 
-  socket.on('markSeen', async ({ roomId, userId }) => {
+  socket.on('markSeen', async ({ roomId } = {}) => {
     try {
+      if (!canAccessRoom(socket, roomId)) return;
+      const viewerId = String(socket.user.id);
       await Message.updateMany(
         {
           roomId:   String(roomId),
-          senderId: { $ne: String(userId) },
+          senderId: { $ne: viewerId },
           seen:     false
         },
         { seen: true, seenAt: new Date() }
@@ -175,12 +206,12 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on("typing", ({ roomId }) => {
-    socket.to(String(roomId)).emit("typing");
+  socket.on("typing", ({ roomId } = {}) => {
+    if (canAccessRoom(socket, roomId)) socket.to(String(roomId)).emit("typing");
   });
 
-  socket.on("stopTyping", ({ roomId }) => {
-    socket.to(String(roomId)).emit("stopTyping");
+  socket.on("stopTyping", ({ roomId } = {}) => {
+    if (canAccessRoom(socket, roomId)) socket.to(String(roomId)).emit("stopTyping");
   });
 
   socket.on('disconnect', () => {

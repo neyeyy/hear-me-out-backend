@@ -4,30 +4,33 @@ const router = express.Router();
 const User = require("../models/User");
 const Assessment = require("../models/Assessment");
 const authMiddleware = require("../middleware/authMiddleware");
+const requireRole = require("../middleware/requireRole");
 
-router.get("/students", authMiddleware, async (req, res) => {
+router.get("/students", authMiddleware, requireRole("counselor"), async (req, res) => {
   try {
     // 1. GET ALL STUDENTS
-    const students = await User.find({ role: "student" }, "name email yearLevel createdAt");
+    const students = await User.find({ role: "student" }, "name email yearLevel createdAt").lean();
 
-    // 2. ATTACH LATEST ASSESSMENT SEVERITY
-    const studentsWithSeverity = await Promise.all(
-      students.map(async (student) => {
-        const latestAssessment = await Assessment.findOne({
-          studentId: student._id
-        }).sort({ createdAt: -1 });
+    // 2. ATTACH LATEST ASSESSMENT SEVERITY — one aggregation instead of one
+    // query per student, so this doesn't get slower as the roster grows.
+    const latestAssessments = await Assessment.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: "$studentId", severity: { $first: "$severity" }, score: { $first: "$score" } } },
+    ]);
+    const latestBySid = new Map(latestAssessments.map(a => [String(a._id), a]));
 
-        return {
-          _id:       student._id,
-          name:      student.name,
-          email:     student.email,
-          yearLevel: student.yearLevel || null,
-          createdAt: student.createdAt,
-          severity:  latestAssessment ? latestAssessment.severity : "LOW",
-          score:     latestAssessment ? latestAssessment.score    : 0,
-        };
-      })
-    );
+    const studentsWithSeverity = students.map(student => {
+      const latest = latestBySid.get(String(student._id));
+      return {
+        _id:       student._id,
+        name:      student.name,
+        email:     student.email,
+        yearLevel: student.yearLevel || null,
+        createdAt: student.createdAt,
+        severity:  latest ? latest.severity : "LOW",
+        score:     latest ? latest.score    : 0,
+      };
+    });
 
     // 3. SEND RESPONSE
     res.json({ students: studentsWithSeverity });

@@ -5,11 +5,13 @@ const User        = require("../models/User");
 const Mood        = require("../models/Mood");
 const Appointment = require("../models/Appointment");
 const Assessment  = require("../models/Assessment");
+const authMiddleware = require("../middleware/authMiddleware");
+const requireRole    = require("../middleware/requireRole");
 
 // GET /api/analytics/dashboard
 // Optional ?from=<ISO date>&to=<ISO date> scopes the mood breakdown to that
 // range — used by the Overview page's day/month/year filter.
-router.get("/dashboard", async (req, res) => {
+router.get("/dashboard", authMiddleware, requireRole("counselor"), async (req, res) => {
   try {
     const totalStudents        = await User.countDocuments({ role: "student" });
     const highRisk             = await Assessment.countDocuments({ severity: "HIGH" });

@@ -326,6 +326,11 @@ exports.createAssessment = async (req, res) => {
 exports.checkAssessment = async (req, res) => {
   try {
     const { studentId } = req.params;
+    // A student may only check their own assessment status; a counselor can
+    // check any student's.
+    if (req.user.role !== "counselor" && String(studentId) !== String(req.user.id)) {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
 
     const latest = await Assessment.findOne({ studentId }).sort({ createdAt: -1 });
 
