@@ -1426,6 +1426,10 @@ export default function CounselorDashboard() {
                   {[
                     { label:"Students",    value: total },
                     { label:"Sessions",    value: Object.keys(appointments).length },
+                    // Every appointment a student has ever created — not
+                    // deduped per student like Sessions is, so a student who
+                    // booked more than once over time counts each time.
+                    { label:"Appointments Booked", value: apptList.length },
                     { label:"Mood Entries",value: totalMoods },
                   ].map(item => (
                     <div key={item.label} style={{ textAlign:"center" }}>
