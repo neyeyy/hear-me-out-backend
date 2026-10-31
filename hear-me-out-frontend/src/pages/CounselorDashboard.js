@@ -2073,7 +2073,13 @@ export default function CounselorDashboard() {
                         </div>
                       )}
                       {chatMessages.map((msg, i) => {
-                        const isMe   = String(msg.senderId) === String(counselorId);
+                        const isSystem = msg.senderId === "system";
+                        // Automated chatbot notices (missed-schedule / reschedule
+                        // prompts) read from the office side of the conversation,
+                        // so they sit on the counselor's side like a sent message —
+                        // just labeled "Chatbot" so they're not mistaken for
+                        // something the counselor typed themselves.
+                        const isMe   = isSystem || String(msg.senderId) === String(counselorId);
                         const isLast = i === chatMessages.length - 1;
                         // Messenger-style grouping: consecutive messages from
                         // the same sender sit closer together.
@@ -2087,6 +2093,11 @@ export default function CounselorDashboard() {
                               </div>
                             )}
                             <div style={{ display:"flex", flexDirection:"column", alignItems: isMe ? "flex-end" : "flex-start", maxWidth:"78%" }}>
+                              {isSystem && (
+                                <span style={{ fontSize:"11px", fontWeight:700, color:"#A8AECB", margin:"0 4px 3px", fontFamily:"'Poppins',sans-serif" }}>
+                                  🤖 Chatbot
+                                </span>
+                              )}
                               <div style={isMe ? s.msMyBubble : s.msTheirBubble}>
                                 <span style={s.msMsgText}>{msg.message}</span>
                                 <div style={s.msMsgMeta}>
