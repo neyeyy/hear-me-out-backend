@@ -14,7 +14,6 @@ const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backe
 /* ─── constants ──────────────────────────────────────────── */
 const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8", MISSED: "#9CA3AF" };
 const SEV_BG    = { HIGH: "#FFF0EE", MEDIUM: "#FFF8EC", LOW: "#E6FAF7", MISSED: "#F1F2F6" };
-const SESSION_MINUTES = { HIGH: 60, MEDIUM: 60, LOW: 30 };
 const SEV_ORDER = { HIGH: 1, MEDIUM: 2, LOW: 3 };
 // "Pending" reads as "Upcoming" everywhere it's shown — matches the mobile app's wording.
 const STATUS_LABEL = { PENDING: "Upcoming" };
@@ -1887,12 +1886,6 @@ export default function CounselorDashboard() {
                       <span style={s.modalInfoLabel}>Severity</span>
                       <span style={{ ...s.modalInfoValue, color: SEV_COLOR[rescheduleAppt.severity], fontWeight:"700" }}>
                         {rescheduleAppt.severity}
-                      </span>
-                    </div>
-                    <div style={s.modalInfoRow}>
-                      <span style={s.modalInfoLabel}>Session length</span>
-                      <span style={s.modalInfoValue}>
-                        {rescheduleAppt.durationMinutes || SESSION_MINUTES[rescheduleAppt.severity] || 30} min
                       </span>
                     </div>
                     {rescheduleAppt.scheduleDate && (
