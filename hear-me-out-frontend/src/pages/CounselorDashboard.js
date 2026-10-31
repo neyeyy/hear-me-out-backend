@@ -991,7 +991,15 @@ export default function CounselorDashboard() {
       </aside>
 
       {/* ══════════ MAIN ══════════ */}
-      <main style={{ ...s.main, padding: (tab === "chat" || tab === "schedule" || tab === "analytics") ? "0" : "28px 32px" }}>
+      <main style={{
+        ...s.main,
+        padding: (tab === "chat" || tab === "schedule" || tab === "analytics") ? "0" : "28px 32px",
+        // Chat/Schedule are single full-bleed white panels with zero
+        // padding — if their own panel's height ever falls a hair short of
+        // main's real height, this is what shows through instead of the
+        // dashboard's gray background bleeding in at the edge.
+        background: (tab === "chat" || tab === "schedule") ? "#fff" : undefined,
+      }}>
 
         {/* ── Top bar — hidden on chat, schedule, analytics tabs ── */}
         {tab !== "chat" && tab !== "schedule" && tab !== "analytics" && <div style={s.topBar}>
@@ -1761,7 +1769,11 @@ export default function CounselorDashboard() {
 
           return (
             <>
-              <div style={{ ...s.card, margin: 0, borderRadius: 0, minHeight: "100vh", boxShadow: "none" }}>
+              {/* minHeight: 100% (not 100vh) — same fix as the Chat panel:
+                  100vh measures the raw viewport instead of this card's
+                  actual container, undershooting slightly and letting
+                  main's background show through gray below the grid. */}
+              <div style={{ ...s.card, margin: 0, borderRadius: 0, minHeight: "100%", boxShadow: "none" }}>
                 {/* Week nav header */}
                 <div style={s.weekNavBar}>
                   <button onClick={() => setWeekOffset(o => o - 1)} style={s.weekNavBtn}>← Prev</button>
