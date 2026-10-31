@@ -1173,15 +1173,19 @@ export default function CounselorDashboard() {
                 return false;
               };
 
+              // Missed appointments still show (greyed out) so a counselor can
+              // see a no-show at a glance and reschedule it right from the
+              // grid — only cancelled ones (which never actually happened at
+              // that slot) are left off.
               const findSlot = (day, slot) =>
                 apptList.find(a => {
-                  if (!a.scheduleDate || a.status === "MISSED" || a.status === "CANCELLED") return false;
+                  if (!a.scheduleDate || a.status === "CANCELLED") return false;
                   const d = new Date(a.scheduleDate);
                   return ovSameDay(d, day) && ovMatchSlot(d, slot);
                 });
 
               const weekAppts = apptList.filter(a => {
-                if (!a.scheduleDate || a.status === "MISSED" || a.status === "CANCELLED") return false;
+                if (!a.scheduleDate || a.status === "CANCELLED") return false;
                 const d = new Date(a.scheduleDate);
                 return ovDates.some(wd => ovSameDay(d, wd));
               });
@@ -1251,12 +1255,18 @@ export default function CounselorDashboard() {
                                 <div key={di} style={{ ...s.ovSlot, background: isToday(d) ? "rgba(91,107,216,0.02)" : undefined }}>
                                   {appt && (
                                     <div
-                                      style={{ ...s.ovChip, borderLeftColor: SEV_COLOR[appt.severity] || "#5B6BD8" }}
+                                      style={{
+                                        ...s.ovChip,
+                                        borderLeftColor: appt.status === "MISSED" ? "#9CA3AF" : (SEV_COLOR[appt.severity] || "#5B6BD8"),
+                                        opacity: appt.status === "MISSED" ? 0.6 : 1,
+                                      }}
                                       onClick={() => openReschedule(appt)}
-                                      title={`${sn} — ${appt.severity} — Click to reschedule`}
+                                      title={`${sn} — ${appt.severity}${appt.status === "MISSED" ? " — Missed" : ""} — Click to reschedule`}
                                     >
                                       <div style={s.ovChipName}>{sn}</div>
-                                      <div style={{ ...s.ovChipSev, color: SEV_COLOR[appt.severity] }}>{appt.severity}</div>
+                                      <div style={{ ...s.ovChipSev, color: appt.status === "MISSED" ? "#9CA3AF" : SEV_COLOR[appt.severity] }}>
+                                        {appt.status === "MISSED" ? "⚠ Missed" : appt.severity}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -1647,9 +1657,13 @@ export default function CounselorDashboard() {
             return false;
           };
 
+          // Missed appointments still show (greyed out) so a counselor can
+          // see a no-show at a glance and reschedule it right from the grid —
+          // only cancelled ones (which never actually happened at that slot)
+          // are left off.
           const findApptInSlot = (day, slot) =>
             apptList.find(a => {
-              if (!a.scheduleDate || a.status === "MISSED" || a.status === "CANCELLED") return false;
+              if (!a.scheduleDate || a.status === "CANCELLED") return false;
               const d = new Date(a.scheduleDate);
               return sameDay(d, day) && matchesSlot(d, slot);
             });
@@ -1659,7 +1673,7 @@ export default function CounselorDashboard() {
 
           // How urgent is an appointment chip
           const chipUrgency = (appt) => {
-            if (!appt.scheduleDate || appt.status === "DONE") return null;
+            if (!appt.scheduleDate || appt.status === "DONE" || appt.status === "MISSED") return null;
             const diffMin = Math.round((new Date(appt.scheduleDate) - new Date()) / 60000);
             if (diffMin < 0 && diffMin > -120) return "overdue";
             if (diffMin >= 0 && diffMin <= 15) return "now";
@@ -1727,15 +1741,17 @@ export default function CounselorDashboard() {
                               {appt && (() => {
                                 const urg = chipUrgency(appt);
                                 const urgColor = urg === "overdue" ? "#F87171" : urg === "now" ? "#F87171" : urg === "soon" ? "#F9A72B" : null;
+                                const missed = appt.status === "MISSED";
                                 return (
                                   <div
                                     style={{
                                       ...s.apptChip,
-                                      borderLeftColor: SEV_COLOR[appt.severity] || "#5B6BD8",
+                                      borderLeftColor: missed ? "#9CA3AF" : (SEV_COLOR[appt.severity] || "#5B6BD8"),
+                                      opacity: missed ? 0.6 : 1,
                                       boxShadow: urg === "now" ? "0 0 0 2px #F8717155" : urg === "overdue" ? "0 0 0 2px #F8717133" : undefined,
                                     }}
                                     onClick={() => openReschedule(appt)}
-                                    title="Click to reschedule"
+                                    title={missed ? "Missed — click to reschedule" : "Click to reschedule"}
                                   >
                                     {urg && (
                                       <div style={{ fontSize: "9px", fontWeight: "700", color: urgColor, marginBottom: "2px", letterSpacing: "0.04em" }}>
@@ -1743,11 +1759,11 @@ export default function CounselorDashboard() {
                                       </div>
                                     )}
                                     <div style={s.apptChipName}>{studentName(appt)}</div>
-                                    <div style={{ ...s.apptChipMeta, color: SEV_COLOR[appt.severity] }}>
+                                    <div style={{ ...s.apptChipMeta, color: missed ? "#9CA3AF" : SEV_COLOR[appt.severity] }}>
                                       {appt.severity}
                                     </div>
-                                    <div style={{ ...s.apptChipMeta, color: appt.status === "DONE" ? "#38C9B8" : appt.status === "ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
-                                      {statusLabel(appt.status)}
+                                    <div style={{ ...s.apptChipMeta, color: missed ? "#9CA3AF" : appt.status === "DONE" ? "#38C9B8" : appt.status === "ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
+                                      {missed ? "⚠ Missed" : statusLabel(appt.status)}
                                     </div>
                                   </div>
                                 );
@@ -1760,7 +1776,7 @@ export default function CounselorDashboard() {
                   })}
                 </div>
 
-                {apptList.filter(a => a.scheduleDate && a.status !== "MISSED" && a.status !== "CANCELLED").length === 0 && (
+                {apptList.filter(a => a.scheduleDate && a.status !== "CANCELLED").length === 0 && (
                   <div style={s.emptyBox}>
                     <span style={{ fontSize:"32px" }}>📅</span>
                     <p style={s.emptyText}>No appointments scheduled yet</p>
