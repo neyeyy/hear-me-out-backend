@@ -1633,6 +1633,80 @@ export default function CounselorDashboard() {
               })()}
             </div>
 
+            {/* Appointments by Year — same pattern as Stress Levels by Year,
+                but for booking activity instead of severity. */}
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background:"#5B6BD8" }} />
+                  <h2 style={s.cardTitle}>Appointments by Year</h2>
+                </div>
+                <span style={s.cardSub}>Booking activity per year level</span>
+              </div>
+              {(() => {
+                const YEARS = ["Grade 11","Grade 12","1st Year","2nd Year","3rd Year","4th Year"];
+                const yearByStudent = new Map(students.map(s => [String(s._id), s.yearLevel]));
+
+                const rows = YEARS.map(yr => {
+                  // Cancelled appointments never actually happened, so they're
+                  // left out here — same treatment as the schedule calendar.
+                  const apptsForYear = apptList.filter(a => {
+                    if (!a.studentId || a.status === "CANCELLED") return false;
+                    const sid = typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+                    return yearByStudent.get(String(sid)) === yr;
+                  });
+                  const done   = apptsForYear.filter(a => a.status === "DONE").length;
+                  const active = apptsForYear.filter(a => a.status === "PENDING" || a.status === "ONGOING").length;
+                  const missed = apptsForYear.filter(a => a.status === "MISSED").length;
+                  return { yr, done, active, missed, total: done + active + missed };
+                }).filter(r => r.total > 0);
+
+                if (rows.length === 0) {
+                  return (
+                    <div style={s.emptyBox}>
+                      <span style={{ fontSize:"32px" }}>📅</span>
+                      <p style={s.emptyText}>No appointments booked yet to break down by year level.</p>
+                    </div>
+                  );
+                }
+
+                const busiest = rows.reduce((best, r) => (r.total > (best?.total || 0) ? r : best), null);
+
+                return (
+                  <>
+                    {busiest && (
+                      <div style={{ display:"flex", alignItems:"center", gap:"8px", background:"#EEF0FD", border:"1.5px solid rgba(91,107,216,0.3)", borderRadius:"12px", padding:"10px 14px", marginBottom:"18px" }}>
+                        <span style={{ fontSize:"16px" }}>📌</span>
+                        <span style={{ fontSize:"13px", fontWeight:600, color:"#5B6BD8", fontFamily:"'Lato',sans-serif" }}>
+                          {busiest.yr} has booked the most appointments ({busiest.total})
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+                      {rows.map(r => (
+                        <div key={r.yr}>
+                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"6px" }}>
+                            <span style={{ fontSize:"13px", fontWeight:700, color:"#2D3047", fontFamily:"'Poppins',sans-serif" }}>{r.yr}</span>
+                            <span style={{ fontSize:"11px", color:"#A8AECB", fontFamily:"'Lato',sans-serif" }}>{r.total} booked</span>
+                          </div>
+                          <div style={{ display:"flex", height:"10px", borderRadius:"6px", overflow:"hidden", background:"#E8EAF6" }}>
+                            {r.done   > 0 && <div style={{ width:`${r.done   / r.total * 100}%`, background:"#38C9B8" }} title={`${r.done} Completed`} />}
+                            {r.active > 0 && <div style={{ width:`${r.active / r.total * 100}%`, background:"#F9A72B" }} title={`${r.active} Active`} />}
+                            {r.missed > 0 && <div style={{ width:`${r.missed / r.total * 100}%`, background:"#9CA3AF" }} title={`${r.missed} Missed`} />}
+                          </div>
+                          <div style={{ display:"flex", gap:"14px", marginTop:"6px" }}>
+                            <span style={{ fontSize:"11px", color:"#38C9B8", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>✅ {r.done} Completed</span>
+                            <span style={{ fontSize:"11px", color:"#F9A72B", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>⏳ {r.active} Active</span>
+                            <span style={{ fontSize:"11px", color:"#9CA3AF", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>⚠ {r.missed} Missed</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
           </div>
         )}
 
