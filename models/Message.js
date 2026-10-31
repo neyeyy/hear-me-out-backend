@@ -5,6 +5,7 @@ const messageSchema = new mongoose.Schema({
   senderId: { type: String, required: true },
   message:  { type: String, required: true },
   seen:     { type: Boolean, default: false },
+  seenAt:   { type: Date, default: null },
 }, { timestamps: true });
 
 messageSchema.index({ roomId: 1, createdAt: 1 });

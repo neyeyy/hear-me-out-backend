@@ -1,26 +1,54 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  Platform, ActivityIndicator, ScrollView, Modal,
+  Keyboard, Dimensions,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
+
+const YEAR_LEVELS = ["Grade 11", "Grade 12", "1st Year", "2nd Year", "3rd Year", "4th Year"];
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 export default function RegisterScreen({ navigation }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [yearLevel, setYearLevel] = useState("");
+  const [showYearPicker, setShowYearPicker] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
   const [error, setError] = useState("");
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Small card at rest; while the keyboard is open the card grows to fill
+  // the screen so scrolling reveals more of it smoothly, instead of a
+  // fixed-size box with the background peeking around it mid-scroll.
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const onHide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
+
+  // Digits only, capped at 11 — matches the school's ID format (e.g. 02000351322).
+  const handleStudentIdChange = (v) => setStudentId(v.replace(/\D/g, "").slice(0, 11));
 
   const handleRegister = async () => {
-    if (!name || !email || !password) { setError("Please fill in all fields."); return; }
+    if (!name || !email || !password || !studentId) { setError("Please fill in all fields."); return; }
+    if (!/^0\d{10}$/.test(studentId)) {
+      setError("Student ID must be 11 digits and start with 0 (e.g. 02000351322).");
+      return;
+    }
     setError("");
     try {
       setLoading(true);
-      const res = await API.post("/auth/register", { name, email, password });
+      const res = await API.post("/auth/register", { name, email, password, yearLevel, studentId });
       if (res.data.success) {
         navigation.navigate("Login");
       } else {
@@ -38,12 +66,16 @@ export default function RegisterScreen({ navigation }) {
       <View style={styles.blob1} />
       <View style={styles.blob2} />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      <KeyboardAwareScrollView
         style={styles.kav}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={24}
+        keyboardOpeningTime={0}
       >
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <View style={styles.card}>
+          <View style={[styles.card, keyboardVisible && styles.cardExpanded]}>
             {/* Header */}
             <View style={styles.header}>
               <Text style={styles.logo}>🌱</Text>
@@ -55,7 +87,7 @@ export default function RegisterScreen({ navigation }) {
             <View style={styles.group}>
               <Text style={styles.label}>FULL NAME</Text>
               <View style={[styles.inputRow, focusedField === "name" && styles.inputRowFocused]}>
-                <Text style={styles.fieldIcon}>👤</Text>
+                <Ionicons name="person-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
                   placeholder="Your full name"
                   placeholderTextColor="#9CA3AF"
@@ -72,7 +104,7 @@ export default function RegisterScreen({ navigation }) {
             <View style={styles.group}>
               <Text style={styles.label}>EMAIL ADDRESS</Text>
               <View style={[styles.inputRow, focusedField === "email" && styles.inputRowFocused]}>
-                <Text style={styles.fieldIcon}>✉️</Text>
+                <Ionicons name="mail-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
                   placeholder="you@university.edu"
                   placeholderTextColor="#9CA3AF"
@@ -87,11 +119,30 @@ export default function RegisterScreen({ navigation }) {
               </View>
             </View>
 
+            {/* Student ID */}
+            <View style={styles.group}>
+              <Text style={styles.label}>STUDENT ID</Text>
+              <View style={[styles.inputRow, focusedField === "studentId" && styles.inputRowFocused]}>
+                <Ionicons name="card-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
+                <TextInput
+                  placeholder="02000351322"
+                  placeholderTextColor="#9CA3AF"
+                  value={studentId}
+                  onChangeText={handleStudentIdChange}
+                  onFocus={() => setFocusedField("studentId")}
+                  onBlur={() => setFocusedField(null)}
+                  keyboardType="number-pad"
+                  maxLength={11}
+                  style={styles.input}
+                />
+              </View>
+            </View>
+
             {/* Password */}
             <View style={styles.group}>
               <Text style={styles.label}>PASSWORD</Text>
               <View style={[styles.inputRow, focusedField === "password" && styles.inputRowFocused]}>
-                <Text style={styles.fieldIcon}>🔒</Text>
+                <Ionicons name="lock-closed-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
                 <TextInput
                   placeholder="••••••••"
                   placeholderTextColor="#9CA3AF"
@@ -103,9 +154,25 @@ export default function RegisterScreen({ navigation }) {
                   style={[styles.input, { flex: 1 }]}
                 />
                 <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eye}>
-                  <Text>{showPass ? "🙈" : "👁️"}</Text>
+                  <Ionicons name={showPass ? "eye-off-outline" : "eye-outline"} size={18} color="#9CA3AF" />
                 </TouchableOpacity>
               </View>
+            </View>
+
+            {/* Year Level */}
+            <View style={styles.group}>
+              <Text style={styles.label}>YEAR LEVEL</Text>
+              <TouchableOpacity
+                onPress={() => setShowYearPicker(true)}
+                style={[styles.inputRow, showYearPicker && styles.inputRowFocused]}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="school-outline" size={18} color="#44A08D" style={styles.fieldIconVec} />
+                <Text style={[styles.input, !yearLevel && { color: "#9CA3AF" }]}>
+                  {yearLevel || "Select year level"}
+                </Text>
+                <Text style={{ color: "#9CA3AF", fontSize: 12 }}>▾</Text>
+              </TouchableOpacity>
             </View>
 
             {!!error && <Text style={{ color:"#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 }}>{error}</Text>}
@@ -138,8 +205,36 @@ export default function RegisterScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
+
+      {/* Year Level picker */}
+      <Modal
+        visible={showYearPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowYearPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.pickerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowYearPicker(false)}
+        >
+          <View style={styles.pickerSheet}>
+            <Text style={styles.pickerTitle}>Select Year Level</Text>
+            {YEAR_LEVELS.map((yr) => (
+              <TouchableOpacity
+                key={yr}
+                onPress={() => { setYearLevel(yr); setShowYearPicker(false); }}
+                style={[styles.pickerOption, yearLevel === yr && styles.pickerOptionActive]}
+              >
+                <Text style={[styles.pickerOptionText, yearLevel === yr && styles.pickerOptionTextActive]}>
+                  {yr}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -169,7 +264,12 @@ const styles = StyleSheet.create({
     left: -50,
   },
   kav: {
+    flex: 1,
     width: "100%",
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
     paddingHorizontal: 24,
     paddingVertical: 24,
   },
@@ -182,6 +282,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 32,
     elevation: 12,
+  },
+  cardExpanded: {
+    minHeight: SCREEN_HEIGHT - 120,
+    borderRadius: 20,
   },
   header: {
     alignItems: "center",
@@ -230,6 +334,9 @@ const styles = StyleSheet.create({
     fontSize: 17,
     marginRight: 10,
   },
+  fieldIconVec: {
+    marginRight: 10,
+  },
   input: {
     flex: 1,
     fontSize: 15,
@@ -270,5 +377,45 @@ const styles = StyleSheet.create({
     color: "#4ECDC4",
     fontWeight: "700",
     textDecorationLine: "underline",
+  },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  pickerSheet: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 12,
+  },
+  pickerTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#374151",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  pickerOption: {
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  pickerOptionActive: {
+    backgroundColor: "#F0FDFB",
+  },
+  pickerOptionText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1A1A2E",
+  },
+  pickerOptionTextActive: {
+    color: "#44A08D",
   },
 });

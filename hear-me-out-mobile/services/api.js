@@ -1,11 +1,10 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const BASE_URL = "https://hear-me-out-backend-production.up.railway.app/api";
+const BASE_URL = "https://hear-me-out-backend.onrender.com/api";
 
 const API = axios.create({ baseURL: BASE_URL });
 
-// Auto-attach JWT token to every request
 API.interceptors.request.use(async (config) => {
   try {
     const token = await AsyncStorage.getItem("token");

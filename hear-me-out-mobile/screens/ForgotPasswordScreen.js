@@ -1,10 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView,
+  Platform, ActivityIndicator, ScrollView,
+  Keyboard, Dimensions,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../services/api";
+
+const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [step,    setStep]    = useState("request"); // "request" | "code"
@@ -18,6 +23,18 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [success, setSuccess] = useState(false);
   const [focused, setFocused] = useState(null);
   const [generatedCode, setGeneratedCode] = useState("");
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Small card at rest; while the keyboard is open the card grows to fill
+  // the screen so scrolling reveals more of it smoothly, instead of a
+  // fixed-size box with the background peeking around it mid-scroll.
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const onShow = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const onHide = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => { onShow.remove(); onHide.remove(); };
+  }, []);
 
   const handleRequest = async () => {
     if (!email) { setError("Please enter your email."); return; }
@@ -75,9 +92,16 @@ export default function ForgotPasswordScreen({ navigation }) {
     <LinearGradient colors={["#667eea", "#764ba2"]} style={s.container}>
       <View style={s.blob1} />
       <View style={s.blob2} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={s.kav}>
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <View style={s.card}>
+      <KeyboardAwareScrollView
+        style={s.kav}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={24}
+        keyboardOpeningTime={0}
+      >
+          <View style={[s.card, keyboardVisible && s.cardExpanded]}>
 
             {step === "request" ? (
               <>
@@ -90,7 +114,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <View style={s.group}>
                   <Text style={s.label}>EMAIL ADDRESS</Text>
                   <View style={[s.inputRow, focused === "email" && s.inputRowFocused]}>
-                    <Text style={s.icon}>✉️</Text>
+                    <Ionicons name="mail-outline" size={18} color="#6C63FF" style={s.iconVec} />
                     <TextInput
                       placeholder="you@university.edu"
                       placeholderTextColor="#9CA3AF"
@@ -148,7 +172,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <View style={s.group}>
                   <Text style={s.label}>NEW PASSWORD</Text>
                   <View style={[s.inputRow, focused === "pw" && s.inputRowFocused]}>
-                    <Text style={s.icon}>🔒</Text>
+                    <Ionicons name="lock-closed-outline" size={18} color="#6C63FF" style={s.iconVec} />
                     <TextInput
                       placeholder="Min. 6 characters"
                       placeholderTextColor="#9CA3AF"
@@ -160,7 +184,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                       style={[s.input, { flex:1 }]}
                     />
                     <TouchableOpacity onPress={() => setShowPw(!showPw)} style={s.eye}>
-                      <Text>{showPw ? "🙈" : "👁️"}</Text>
+                      <Ionicons name={showPw ? "eye-off-outline" : "eye-outline"} size={18} color="#9CA3AF" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -168,7 +192,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 <View style={s.group}>
                   <Text style={s.label}>CONFIRM PASSWORD</Text>
                   <View style={[s.inputRow, focused === "cpw" && s.inputRowFocused]}>
-                    <Text style={s.icon}>🔒</Text>
+                    <Ionicons name="lock-closed-outline" size={18} color="#6C63FF" style={s.iconVec} />
                     <TextInput
                       placeholder="Re-enter password"
                       placeholderTextColor="#9CA3AF"
@@ -199,8 +223,7 @@ export default function ForgotPasswordScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </LinearGradient>
   );
 }
@@ -209,8 +232,10 @@ const s = StyleSheet.create({
   container: { flex:1, justifyContent:"center", alignItems:"center" },
   blob1: { position:"absolute", width:360, height:360, borderRadius:180, backgroundColor:"rgba(255,255,255,0.07)", top:-100, right:-100 },
   blob2: { position:"absolute", width:260, height:260, borderRadius:130, backgroundColor:"rgba(255,101,132,0.1)", bottom:-80, left:-60 },
-  kav: { width:"100%", paddingHorizontal:24, paddingVertical:24 },
+  kav: { flex:1, width:"100%" },
+  scrollContent: { flexGrow:1, justifyContent:"center", paddingHorizontal:24, paddingVertical:24 },
   card: { backgroundColor:"rgba(255,255,255,0.97)", borderRadius:28, padding:32, shadowColor:"#000", shadowOffset:{ width:0, height:16 }, shadowOpacity:0.22, shadowRadius:32, elevation:12 },
+  cardExpanded: { minHeight: SCREEN_HEIGHT - 120, borderRadius: 20 },
   header: { alignItems:"center", marginBottom:24 },
   logo: { fontSize:48, marginBottom:10 },
   title: { fontSize:24, fontWeight:"800", color:"#1A1A2E", letterSpacing:-0.5, marginBottom:4, textAlign:"center" },
@@ -220,6 +245,7 @@ const s = StyleSheet.create({
   inputRow: { flexDirection:"row", alignItems:"center", backgroundColor:"#F9FAFB", borderRadius:14, borderWidth:2, borderColor:"#E5E7EB", paddingHorizontal:14, paddingVertical: Platform.OS === "ios" ? 14 : 2 },
   inputRowFocused: { borderColor:"#6C63FF", backgroundColor:"#FAFBFF" },
   icon: { fontSize:17, marginRight:10 },
+  iconVec: { marginRight:10 },
   input: { flex:1, fontSize:15, color:"#1A1A2E", paddingVertical: Platform.OS === "android" ? 10 : 0 },
   eye: { padding:4 },
   error: { color:"#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginBottom:8 },

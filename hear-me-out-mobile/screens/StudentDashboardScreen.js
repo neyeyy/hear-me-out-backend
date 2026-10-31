@@ -6,21 +6,65 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Updates from "expo-updates";
 import API from "../services/api";
 import MoodCalendar from "../components/MoodCalendar";
+import useDragToClose from "../hooks/useDragToClose";
+import { clearIdentity } from "../services/socket";
 
 const LOGO = require("../assets/logo.png");
 
+// react-native's core SafeAreaView only applies inset padding on iOS — on
+// Android it's a no-op, so header content (logo, buttons) sat under/behind
+// the status bar without this, making the top row hard to see and tap.
+const ANDROID_STATUS_BAR_PAD = Platform.OS === "android" ? (StatusBar.currentHeight || 24) : 0;
+
 /* ─── constants ────────────────────────────────────── */
+const MOOD_QUOTES = {
+  HAPPY: [
+    "Your joy matters — let it fill every corner of your day. Keep shining! 🌟",
+    "Happiness looks good on you. Carry this feeling forward and share it generously. 😊",
+    "You are allowed to feel this good. Celebrate the small wins — they add up to great things. 🎉",
+    "Good days are proof that great ones are possible. Enjoy every moment of this one! 🌈",
+    "Your smile is contagious. The world is genuinely better because you are in it today. 💛",
+  ],
+  SAD: [
+    "It takes real strength to sit with hard feelings. Every storm runs out of rain. 💙",
+    "You don't have to be okay right now. Rest, and come back stronger. 🌙",
+    "Sadness is not weakness — it means you cared deeply. That's a beautiful thing. 💜",
+    "Even the darkest night will end, and the sun will rise again. You are not alone. 🌅",
+    "Tears water the seeds of your next growth. Be gentle with yourself today. 🌱",
+  ],
+  STRESSED: [
+    "You have survived 100% of your hardest days. Take one slow breath — you are enough. 🌿",
+    "Progress, not perfection. You are doing better than you think. One step at a time. 🚶",
+    "Stress means you care. Channel it into focus, and watch what you can accomplish. 💪",
+    "Put down what you can't carry alone. Asking for help is a sign of wisdom, not weakness. 🤝",
+    "Your mind is full right now. Pause, breathe, and do just the next small thing. That's enough. 🍃",
+  ],
+  ANXIOUS: [
+    "Right here, right now — you are safe. This wave will pass, and you will still be standing. 🌈",
+    "Breathe in for 4 counts, hold for 4, out for 4. You are in control of this moment. 🧘",
+    "Anxiety is not a fact — it's a feeling. Feelings pass. You are bigger than your worry. 🌸",
+    "You've faced uncertainty before and made it through. You have everything you need. ✨",
+    "Ground yourself: name 5 things you see, 4 you feel, 3 you hear. You are here. You are okay. 🕊️",
+  ],
+};
+
+const pickQuote = (key) => {
+  const list = MOOD_QUOTES[key] || ["Stay positive and take care of yourself."];
+  return list[Math.floor(Math.random() * list.length)];
+};
+
 const MOODS = [
-  { key: "HAPPY",    emoji: "😊", label: "Happy",    gradient: ["#4ECDC4","#44A08D"], glow: "#4ECDC4", quote: "Your joy matters — let it fill every corner of your day. You deserve every bit of this happiness. Keep shining, the world is brighter with you in it! 🌟" },
-  { key: "SAD",      emoji: "😢", label: "Sad",      gradient: ["#6C63FF","#9B59B6"], glow: "#6C63FF", quote: "It takes real strength to sit with hard feelings. You are not alone in this — every storm runs out of rain. Reaching out today is already an act of courage. 💙" },
-  { key: "STRESSED", emoji: "😫", label: "Stressed", gradient: ["#F7971E","#FFD200"], glow: "#F7971E", quote: "You have survived 100% of your hardest days — that record stays perfect. Take one slow breath. You don't have to solve everything right now. You are enough. 🌿" },
-  { key: "ANXIOUS",  emoji: "😰", label: "Anxious",  gradient: ["#FF6B6B","#FF8E53"], glow: "#FF6B6B", quote: "Right here, right now — you are safe. Anxiety is your mind trying to protect you, not predict the future. This wave will pass, and you will still be standing. 🌈" },
+  { key: "HAPPY",    emoji: "😊", label: "Happy",    gradient: ["#4ECDC4","#44A08D"], glow: "#4ECDC4" },
+  { key: "SAD",      emoji: "😢", label: "Sad",      gradient: ["#6C63FF","#9B59B6"], glow: "#6C63FF" },
+  { key: "STRESSED", emoji: "😫", label: "Stressed", gradient: ["#F7971E","#FFD200"], glow: "#F7971E" },
+  { key: "ANXIOUS",  emoji: "😰", label: "Anxious",  gradient: ["#FF6B6B","#FF8E53"], glow: "#FF6B6B" },
 ];
 
 const STATUS_META = {
-  PENDING: { label: "Pending",   color: "#F7971E", bg: "rgba(247,151,30,0.12)",  border: "rgba(247,151,30,0.35)" },
+  PENDING: { label: "Upcoming",  color: "#F7971E", bg: "rgba(247,151,30,0.12)",  border: "rgba(247,151,30,0.35)" },
   ONGOING: { label: "Ongoing",   color: "#6C63FF", bg: "rgba(108,99,255,0.12)", border: "rgba(108,99,255,0.35)" },
   DONE:    { label: "Completed", color: "#4ECDC4", bg: "rgba(78,205,196,0.12)",  border: "rgba(78,205,196,0.35)" },
 };
@@ -35,18 +79,21 @@ function relTime(date) {
 }
 
 /* ─── component ────────────────────────────────────── */
-// step: "pick" | "note" | "dashboard" | "profile"
+// step: "choice" | "pick" | "note" | "dashboard" | "profile"
 export default function StudentDashboardScreen({ navigation, route }) {
   const [step,         setStep]        = useState(route.params?.step || "dashboard");
   const [selectedMood, setSelectedMood]= useState(null);
   const [note,         setNote]        = useState("");
   const [userName,     setUserName]    = useState("");
   const [userEmail,    setUserEmail]   = useState("");
+  const [userYearLevel,setUserYearLevel]= useState("");
+  const [userStudentId,setUserStudentId]= useState("");
   const [userId,       setUserId]      = useState(null);
   const [appointment,  setAppt]        = useState(null);
   const [calKey,       setCalKey]      = useState(0);
   const [notifications,setNotifs]      = useState([]);
   const [showNotif,    setShowNotif]   = useState(false);
+  const notifDrag = useDragToClose(() => setShowNotif(false), showNotif);
 
   // profile
   const [curPw,    setCurPw]    = useState("");
@@ -54,10 +101,33 @@ export default function StudentDashboardScreen({ navigation, route }) {
   const [conPw,    setConPw]    = useState("");
   const [pwLoad,   setPwLoad]   = useState(false);
   const [pwMsg,    setPwMsg]    = useState({ text:"", ok:false });
+  const [lastCheckInfo, setLastCheckInfo] = useState(null);
+
+  useEffect(() => {
+    if (step === "profile") {
+      AsyncStorage.getItem("lastUpdateCheck")
+        .then(raw => { if (raw) setLastCheckInfo(JSON.parse(raw)); })
+        .catch(() => {});
+    }
+  }, [step]);
 
   // cancel + history
-  const [history,    setHistory]    = useState([]);
+  const [history,        setHistory]        = useState([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const [cancelMsg,  setCancelMsg]  = useState({ text:"", ok:false });
+  const [requestMsg, setRequestMsg] = useState({ text:"", ok:false });
+  const [requesting, setRequesting] = useState(false);
+
+  // schedule modal (calendar + time slots)
+  const [schedModalOpen, setSchedModalOpen] = useState(false);
+  const [schedDate,      setSchedDate]      = useState("");
+  const [schedMonth,     setSchedMonth]     = useState(new Date());
+  const [schedSlots,     setSchedSlots]     = useState([]);
+  const [schedTime,      setSchedTime]      = useState("");
+  const [schedLoading,   setSchedLoading]   = useState(false);
+  const [schedErr,       setSchedErr]       = useState("");
+  const [schedCounselor, setSchedCounselor] = useState("Any");
+  const schedDrag = useDragToClose(() => setSchedModalOpen(false), schedModalOpen);
 
   // refs
   const prevApptRef   = useRef(null);
@@ -75,13 +145,22 @@ export default function StudentDashboardScreen({ navigation, route }) {
     if (step === "pick") animateIn();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The "Appointment cancelled." message never cleared itself, so it kept
+  // showing under a brand-new appointment once one was created afterward.
+  // Clear it as soon as a genuinely different appointment shows up.
+  useEffect(() => {
+    setCancelMsg({ text: "", ok: false });
+  }, [appointment?._id]);
+
   /* ─── init ── */
   useEffect(() => {
-    AsyncStorage.multiGet(["name","userId","email"]).then(pairs => {
+    AsyncStorage.multiGet(["name","userId","email","yearLevel","studentId"]).then(pairs => {
       const map = Object.fromEntries(pairs);
       setUserName(map.name || "");
       setUserEmail(map.email || "");
       setUserId(map.userId || null);
+      setUserYearLevel(map.yearLevel || "");
+      setUserStudentId(map.studentId || "");
     });
     fetchAppointment();
     fetchHistory();
@@ -105,10 +184,19 @@ export default function StudentDashboardScreen({ navigation, route }) {
       const d    = res.data;
       const appt = Array.isArray(d) ? (d[0] || null) : d;
 
-      if (!firstLoadRef.current) {
+      if (firstLoadRef.current) {
+        // On first load — show notification if appointment already exists
+        if (appt?.scheduleDate && (appt.status === "PENDING" || appt.status === "ONGOING")) {
+          const dt = new Date(appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+          addNotif(`📅 You have an appointment scheduled: ${dt}`, "info");
+        }
+      } else {
         const prev = prevApptRef.current;
         if (!prev && appt) {
-          addNotif("📋 An appointment has been scheduled for you.", "info");
+          const dt = appt.scheduleDate
+            ? new Date(appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })
+            : null;
+          addNotif(dt ? `📋 An appointment has been scheduled for you: ${dt}` : "📋 An appointment has been scheduled for you.", "info");
         } else if (prev && appt) {
           if (prev.status !== appt.status) {
             const msgs = {
@@ -122,7 +210,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
           const newDate  = appt.scheduleDate ? String(appt.scheduleDate) : null;
           if (newDate && prevDate !== newDate) {
             const dt = new Date(appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
-            addNotif(`📅 Your appointment has been scheduled for ${dt}.`, "info");
+            addNotif(`📅 Your appointment has been rescheduled to ${dt}.`, "info");
           }
         }
       }
@@ -139,6 +227,88 @@ export default function StudentDashboardScreen({ navigation, route }) {
       const res = await API.get("/appointments/history");
       if (res.data.success) setHistory(res.data.appointments || []);
     } catch (e) { /* silent */ }
+  };
+
+  /* ─── calendar-based appointment booking ── */
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const startOfToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+
+  const isSelectableDay = (d) => {
+    const dow = d.getDay();
+    return dow !== 0 && d >= startOfToday(); // Sunday closed; Saturday has a counselor in
+  };
+
+  const getMonthGrid = (monthDate) => {
+    const year = monthDate.getFullYear(), month = monthDate.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = Array(firstDow).fill(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+    return cells;
+  };
+
+  const goToMonth = (offset) => {
+    setSchedMonth(m => new Date(m.getFullYear(), m.getMonth() + offset, 1));
+  };
+
+  // Splits a flat list of month cells into fixed 7-cell week rows, so the
+  // grid can be rendered as one explicit <View row> per week instead of
+  // relying on flexWrap to break exactly every 7 cells.
+  const chunkIntoWeeks = (cells) => {
+    const weeks = [];
+    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+    return weeks;
+  };
+
+  const fetchSlotsForDate = async (dateStr) => {
+    setSchedLoading(true);
+    setSchedTime("");
+    try {
+      const res = await API.get(`/appointments/available-slots?date=${dateStr}`);
+      setSchedSlots(res.data.success ? (res.data.slots || []) : []);
+    } catch (e) {
+      setSchedSlots([]);
+    } finally {
+      setSchedLoading(false);
+    }
+  };
+
+  const openScheduleModal = () => {
+    let d = startOfToday();
+    while (!isSelectableDay(d)) d = new Date(d.getTime() + 86400000);
+    const firstDay = toDateStr(d);
+    setRequestMsg({ text:"", ok:false });
+    setSchedErr("");
+    setSchedMonth(d);
+    setSchedDate(firstDay);
+    setSchedCounselor("Any");
+    setSchedModalOpen(true);
+    fetchSlotsForDate(firstDay);
+  };
+
+  const handleConfirmSchedule = async () => {
+    if (!schedDate || !schedTime) return;
+    setRequesting(true);
+    setSchedErr("");
+    try {
+      const dt = new Date(`${schedDate}T${schedTime}:00`);
+      const res = await API.post("/appointments", { scheduleDate: dt, counselorChoice: schedCounselor });
+      if (res.data.success) {
+        setSchedModalOpen(false);
+        setRequestMsg({ text:"Appointment scheduled!", ok:true });
+        fetchAppointment();
+        fetchHistory();
+      } else {
+        setSchedErr(res.data.message || "Could not schedule that slot.");
+        fetchSlotsForDate(schedDate);
+      }
+    } catch (e) {
+      setSchedErr(e.response?.data?.message || "Error scheduling appointment.");
+    } finally {
+      setRequesting(false);
+    }
   };
 
   /* ─── cancel appointment ── */
@@ -195,7 +365,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   const handleMoodPress = (mood) => {
     Animated.spring(scaleAnim, { toValue: 1, tension: 150, friction: 6, useNativeDriver: true }).start();
-    setSelectedMood(mood);
+    setSelectedMood({ ...mood, quote: pickQuote(mood.key) });
     setStep("note");
   };
 
@@ -210,7 +380,8 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
   /* ─── logout ── */
   const handleLogout = async () => {
-    await AsyncStorage.multiRemove(["token","role","userId","name","email"]);
+    clearIdentity();
+    await AsyncStorage.multiRemove(["token","role","userId","name","email","yearLevel","studentId"]);
     navigation.replace("Login");
   };
 
@@ -323,11 +494,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
                     </View>
                     <View style={s.apptRow}>
                       <Text style={s.apptKey}>Counselor</Text>
-                      <Text style={s.apptVal}>{appointment.assignedTo || "—"}</Text>
-                    </View>
-                    <View style={s.apptRow}>
-                      <Text style={s.apptKey}>Severity</Text>
-                      <Text style={[s.apptVal, { fontWeight:"700" }]}>{appointment.severity}</Text>
+                      <Text style={s.apptVal}>{appointment.counselorName || appointment.assignedTo || "—"}</Text>
                     </View>
                     {appointment.scheduleDate && (
                       <View style={[s.apptRow, { borderBottomWidth:0 }]}>
@@ -355,6 +522,17 @@ export default function StudentDashboardScreen({ navigation, route }) {
                     <Text style={{ fontSize:28, marginBottom:8 }}>📋</Text>
                     <Text style={s.noApptText}>No appointment scheduled yet</Text>
                     <Text style={s.noApptSub}>Complete your mood check-in to get started</Text>
+                    <TouchableOpacity
+                      onPress={openScheduleModal}
+                      style={s.requestApptBtn}
+                    >
+                      <Text style={s.requestApptBtnText}>📅 Schedule an Appointment</Text>
+                    </TouchableOpacity>
+                    {!!requestMsg.text && (
+                      <Text style={{ color: requestMsg.ok ? "#4ECDC4" : "#F87171", fontSize:13, fontWeight:"600", textAlign:"center", marginTop:8 }}>
+                        {requestMsg.text}
+                      </Text>
+                    )}
                   </View>
                 )}
               </View>
@@ -363,21 +541,28 @@ export default function StudentDashboardScreen({ navigation, route }) {
               {history.length > 1 && (
                 <View style={s.section}>
                   <Text style={s.sectionLabel}>APPOINTMENT HISTORY</Text>
-                  {history.map((h, i) => {
-                    const colors = { PENDING:"#F7971E", ONGOING:"#6C63FF", DONE:"#4ECDC4", CANCELLED:"#9CA3AF" };
+                  {(showAllHistory ? history : history.slice(0, 3)).map((h, i, arr) => {
+                    const colors = { PENDING:"#F7971E", ONGOING:"#6C63FF", DONE:"#4ECDC4", CANCELLED:"#9CA3AF", MISSED:"#F87171" };
+                    const labels = { PENDING:"Upcoming", ONGOING:"Ongoing", DONE:"Completed", CANCELLED:"Cancelled", MISSED:"Missed" };
                     const c = colors[h.status] || "#9CA3AF";
                     return (
-                      <View key={h._id || i} style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingVertical:10, borderBottomWidth: i < history.length-1 ? 1 : 0, borderBottomColor:"rgba(255,255,255,0.06)" }}>
+                      <View key={h._id || i} style={{ flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingVertical:10, borderBottomWidth: i < arr.length-1 ? 1 : 0, borderBottomColor:"rgba(255,255,255,0.06)" }}>
                         <View>
-                          <Text style={{ fontSize:12, color:c, fontWeight:"700" }}>{h.status}</Text>
+                          <Text style={{ fontSize:12, color:c, fontWeight:"700" }}>{labels[h.status] || h.status}</Text>
                           <Text style={{ fontSize:11, color:"rgba(255,255,255,0.38)", marginTop:2 }}>
                             {h.scheduleDate ? new Date(h.scheduleDate).toLocaleDateString("en-US",{ month:"short", day:"numeric", year:"numeric" }) : "Not scheduled"}
                           </Text>
                         </View>
-                        <Text style={{ fontSize:11, color:"rgba(255,255,255,0.3)" }}>{h.severity}</Text>
                       </View>
                     );
                   })}
+                  {history.length > 3 && (
+                    <TouchableOpacity onPress={() => setShowAllHistory(v => !v)} style={{ paddingTop:10, alignItems:"center" }}>
+                      <Text style={{ fontSize:12, fontWeight:"700", color:"#8B85FF" }}>
+                        {showAllHistory ? "Show less ▲" : `Show all ${history.length} past appointments ▾`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -395,11 +580,6 @@ export default function StudentDashboardScreen({ navigation, route }) {
                   </View>
                 </TouchableOpacity>
               </View>
-
-              {/* Logout */}
-              <TouchableOpacity onPress={handleLogout} style={s.logoutBtn}>
-                <Text style={s.logoutText}>Sign out</Text>
-              </TouchableOpacity>
             </ScrollView>
           </SafeAreaView>
         </LinearGradient>
@@ -412,12 +592,14 @@ export default function StudentDashboardScreen({ navigation, route }) {
           onRequestClose={() => setShowNotif(false)}
         >
           <TouchableOpacity
-            style={s.modalOverlay}
+            style={s.noBgOverlay}
             activeOpacity={1}
             onPress={() => setShowNotif(false)}
           />
-          <View style={s.notifSheet}>
-            <View style={s.sheetHandle} />
+          <Animated.View style={[s.notifSheet, { transform: [{ translateY: notifDrag.translateY }] }]}>
+            <View style={s.handleTouchArea} {...notifDrag.panHandlers}>
+              <View style={s.sheetHandle} />
+            </View>
             <View style={s.sheetHeader}>
               <Text style={s.sheetTitle}>Notifications</Text>
               {notifications.length > 0 && (
@@ -448,13 +630,225 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 ))}
               </ScrollView>
             )}
-          </View>
+          </Animated.View>
+        </Modal>
+
+        {/* Schedule Appointment Modal */}
+        <Modal
+          visible={schedModalOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setSchedModalOpen(false)}
+        >
+          <TouchableOpacity
+            style={s.noBgOverlay}
+            activeOpacity={1}
+            onPress={() => setSchedModalOpen(false)}
+          />
+          <Animated.View style={[s.schedSheet, { transform: [{ translateY: schedDrag.translateY }] }]}>
+            <View style={s.handleTouchArea} {...schedDrag.panHandlers}>
+              <View style={s.sheetHandle} />
+            </View>
+            <View style={s.sheetHeader}>
+              <Text style={s.sheetTitle}>Schedule Your Appointment</Text>
+              <TouchableOpacity onPress={() => setSchedModalOpen(false)} style={s.schedCloseBtn}>
+                <Text style={{ color:"#fff", fontSize:13 }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={s.schedSub}>Pick a date and an open time slot below.</Text>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
+              {/* Month nav */}
+              <View style={s.calNavRow}>
+                <TouchableOpacity
+                  onPress={() => goToMonth(-1)}
+                  disabled={schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()}
+                  style={[s.calNavBtn, (schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()) && { opacity: 0.3 }]}
+                >
+                  <Text style={{ color:"#fff", fontSize:16 }}>‹</Text>
+                </TouchableOpacity>
+                <Text style={s.calNavLabel}>
+                  {schedMonth.toLocaleDateString("en-US", { month:"long", year:"numeric" })}
+                </Text>
+                <TouchableOpacity onPress={() => goToMonth(1)} style={s.calNavBtn}>
+                  <Text style={{ color:"#fff", fontSize:16 }}>›</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Weekday row */}
+              <View style={s.calWeekRow}>
+                {["S","M","T","W","T","F","S"].map((d, i) => (
+                  <Text key={i} style={s.calWeekDay}>{d}</Text>
+                ))}
+              </View>
+
+              {/* Day grid — built as explicit 7-cell week rows so a cell can
+                  never wrap onto the wrong row from pixel-rounding drift. */}
+              <View style={{ marginBottom:18 }}>
+                {chunkIntoWeeks(getMonthGrid(schedMonth)).map((week, wi) => (
+                  <View key={wi} style={s.calWeekGridRow}>
+                    {week.map((d, i) => {
+                      if (!d) return <View key={i} style={s.calDayCell} />;
+                      const dStr = toDateStr(d);
+                      const isSel = dStr === schedDate;
+                      const isToday = dStr === toDateStr(startOfToday());
+                      const selectable = isSelectableDay(d);
+                      return (
+                        <View key={i} style={s.calDayCell}>
+                          <TouchableOpacity
+                            disabled={!selectable}
+                            onPress={() => { setSchedDate(dStr); fetchSlotsForDate(dStr); }}
+                            style={[
+                              s.calDay,
+                              isSel && s.calDayActive,
+                              !selectable && s.calDayDisabled,
+                              isToday && !isSel && s.calDayToday,
+                            ]}
+                          >
+                            <Text style={[s.calDayText, !selectable && { color:"rgba(255,255,255,0.15)" }]}>
+                              {d.getDate()}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+
+              {/* Time slots */}
+              <Text style={s.schedSectionLabel}>AVAILABLE TIMES</Text>
+              {schedLoading ? (
+                <View style={{ paddingVertical:24, alignItems:"center" }}>
+                  <ActivityIndicator color="#6C63FF" />
+                </View>
+              ) : schedSlots.every(sl => !sl.available) ? (
+                <Text style={s.schedEmptyText}>No open slots this day — try another date.</Text>
+              ) : (
+                <View style={s.slotGrid}>
+                  {schedSlots.map(sl => (
+                    <TouchableOpacity
+                      key={sl.value}
+                      disabled={!sl.available}
+                      onPress={() => setSchedTime(sl.value)}
+                      style={[
+                        s.slotBtn,
+                        schedTime === sl.value && s.slotBtnActive,
+                        !sl.available && s.slotBtnDisabled,
+                      ]}
+                    >
+                      <Text style={[
+                        s.slotBtnText,
+                        !sl.available && s.slotBtnTextDisabled,
+                      ]}>{sl.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Counselor preference */}
+              <Text style={s.schedSectionLabel}>COUNSELOR</Text>
+              <View style={s.counselorRow}>
+                {["Ryan Mueden", "Rejoice Pante", "Any"].map(name => (
+                  <TouchableOpacity
+                    key={name}
+                    onPress={() => setSchedCounselor(name)}
+                    style={[s.counselorBtn, schedCounselor === name && s.counselorBtnActive]}
+                  >
+                    <Text style={[s.counselorBtnText, schedCounselor === name && s.counselorBtnTextActive]}>
+                      {name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {!!schedErr && <Text style={s.schedErrText}>{schedErr}</Text>}
+
+              <TouchableOpacity
+                onPress={handleConfirmSchedule}
+                disabled={!schedTime || requesting}
+                style={[s.schedConfirmBtn, (!schedTime || requesting) && { opacity: 0.5 }]}
+              >
+                <Text style={s.schedConfirmBtnText}>
+                  {requesting ? "Scheduling…" : "Confirm Appointment"}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </Animated.View>
         </Modal>
       </View>
     );
   }
 
   /* ── PICK MOOD ── */
+  /* ── CHOICE STEP — reopening the app, no reassessment due yet ── */
+  if (step === "choice") {
+    // Retaking the assessment while a session is already scheduled just
+    // reuses that appointment — voluntary retakes only make sense when the
+    // student doesn't already have one pending.
+    const hasActiveAppt = appointment && (appointment.status === "PENDING" || appointment.status === "ONGOING");
+    return (
+      <View style={{ flex:1 }}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient colors={["#1a1a2e","#16213e","#0f3460"]} style={s.page}>
+          <View style={[s.blob, { width:280, height:280, top:-80, right:-60, opacity:0.12 }]} />
+          <View style={[s.blob, { width:200, height:200, bottom:100, left:-50, opacity:0.08 }]} />
+
+          <SafeAreaView style={{ flex:1 }}>
+            <ScrollView contentContainerStyle={s.pickContent} showsVerticalScrollIndicator={false}>
+              <View style={s.topRow}>
+                <View style={{ flex:1 }}>
+                  <Text style={s.greeting2}>Welcome back{userName ? `, ${userName.split(" ")[0]}` : ""}!</Text>
+                  <Text style={s.dateText}>
+                    {new Date().toLocaleDateString("en-US",{ weekday:"long", month:"long", day:"numeric" })}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={s.heroWrap}>
+                <Text style={s.heroEmoji}>👋</Text>
+                <Text style={s.heroTitle}>What would you like{"\n"}to do today?</Text>
+                <Text style={s.heroSub}>Pick one to get started.</Text>
+              </View>
+
+              <TouchableOpacity onPress={handleTrackMood} activeOpacity={0.88} style={{ marginBottom:14 }}>
+                <LinearGradient colors={["#4ECDC4","#44A08D"]} start={{x:0,y:0}} end={{x:1,y:1}} style={s.choiceCard}>
+                  <Text style={s.choiceCardEmoji}>💙</Text>
+                  <View style={{ flex:1 }}>
+                    <Text style={s.choiceCardTitle}>Track My Mood</Text>
+                    <Text style={s.choiceCardSub}>A quick daily check-in</Text>
+                  </View>
+                  <Text style={s.choiceCardArrow}>→</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => navigation.replace("Assessment")}
+                activeOpacity={0.88}
+                disabled={hasActiveAppt}
+              >
+                <LinearGradient
+                  colors={hasActiveAppt ? ["#6b6b7a","#54545f"] : ["#6C63FF","#764ba2"]}
+                  start={{x:0,y:0}} end={{x:1,y:1}}
+                  style={[s.choiceCard, hasActiveAppt && { opacity:0.6 }]}
+                >
+                  <Text style={s.choiceCardEmoji}>{hasActiveAppt ? "🔒" : "🧠"}</Text>
+                  <View style={{ flex:1 }}>
+                    <Text style={s.choiceCardTitle}>Take the Assessment</Text>
+                    <Text style={s.choiceCardSub}>
+                      {hasActiveAppt ? "You already have a scheduled session" : "PHQ-9 & GAD-7 screening"}
+                    </Text>
+                  </View>
+                  {!hasActiveAppt && <Text style={s.choiceCardArrow}>→</Text>}
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          </SafeAreaView>
+        </LinearGradient>
+      </View>
+    );
+  }
+
   if (step === "pick") {
     return (
       <View style={{ flex:1 }}>
@@ -467,10 +861,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
             <ScrollView contentContainerStyle={s.pickContent} showsVerticalScrollIndicator={false}>
               <Animated.View style={{ opacity: fadeAnim, transform:[{ translateY: slideAnim }] }}>
                 <View style={s.topRow}>
-                  <TouchableOpacity onPress={() => setStep("dashboard")} style={s.backCircle}>
-                    <Text style={s.backCircleText}>←</Text>
-                  </TouchableOpacity>
-                  <View style={{ flex:1, marginLeft:12 }}>
+                  <View style={{ flex:1 }}>
                     <Text style={s.greeting2}>How are you feeling?</Text>
                     <Text style={s.dateText}>
                       {new Date().toLocaleDateString("en-US",{ weekday:"long", month:"long", day:"numeric" })}
@@ -611,7 +1002,7 @@ export default function StudentDashboardScreen({ navigation, route }) {
 
           <SafeAreaView style={{ flex:1 }}>
             <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
               style={{ flex:1 }}
             >
               <ScrollView
@@ -637,6 +1028,24 @@ export default function StudentDashboardScreen({ navigation, route }) {
                   <View style={s.roleBadge}>
                     <Text style={s.roleBadgeText}>🎓 Student</Text>
                   </View>
+                </View>
+
+                {/* Account information */}
+                <View style={s.profileCard}>
+                  <Text style={s.profileCardTitle}>Account Information</Text>
+
+                  {[
+                    { label: "Email",          val: userEmail || "—" },
+                    { label: "Student Number", val: userStudentId || "—" },
+                    { label: "Yr Level",       val: userYearLevel || "—" },
+                  ].map((f, i) => (
+                    <View key={i} style={s.pwGroup}>
+                      <Text style={s.pwLabel}>{f.label.toUpperCase()}</Text>
+                      <View style={s.infoBox}>
+                        <Text style={s.infoBoxText}>{f.val}</Text>
+                      </View>
+                    </View>
+                  ))}
                 </View>
 
                 {/* Change password */}
@@ -685,6 +1094,18 @@ export default function StudentDashboardScreen({ navigation, route }) {
                 <TouchableOpacity onPress={handleLogout} style={s.logoutBtnLg}>
                   <Text style={s.logoutLgText}>🚪 Sign out</Text>
                 </TouchableOpacity>
+
+                {/* Build/update info — lets us confirm exactly what's running on this device */}
+                <Text style={s.versionFooter}>
+                  {Updates.isEmbeddedLaunch
+                    ? "Running the version bundled with this install (no update applied yet)"
+                    : `Updated: ${Updates.createdAt ? new Date(Updates.createdAt).toLocaleString("en-US",{ month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "unknown"} · ${(Updates.updateId || "").slice(0, 8)}`}
+                </Text>
+                {!!lastCheckInfo && (
+                  <Text style={s.versionFooter}>
+                    Last check: {new Date(lastCheckInfo.at).toLocaleString("en-US",{ month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })} — {lastCheckInfo.result}
+                  </Text>
+                )}
               </ScrollView>
             </KeyboardAvoidingView>
           </SafeAreaView>
@@ -702,7 +1123,7 @@ const s = StyleSheet.create({
   blob: { position:"absolute", borderRadius:999, backgroundColor:"#6C63FF", opacity:0.1 },
 
   /* ── Dashboard ── */
-  dashContent: { paddingHorizontal:22, paddingTop:16, paddingBottom:40 },
+  dashContent: { paddingHorizontal:22, paddingTop: 16 + ANDROID_STATUS_BAR_PAD, paddingBottom:40 },
   dashHeader: {
     flexDirection:"row", alignItems:"flex-start",
     marginBottom:24, flexWrap:"wrap", gap:10,
@@ -771,6 +1192,11 @@ const s = StyleSheet.create({
   noApptSub: { fontSize:12, color:"rgba(255,255,255,0.3)", marginTop:4, textAlign:"center" },
   cancelApptBtn: { borderWidth:1.5, borderColor:"rgba(248,113,113,0.4)", borderRadius:10, paddingVertical:10, alignItems:"center" },
   cancelApptBtnText: { color:"#F87171", fontSize:13, fontWeight:"700" },
+  requestApptBtn: {
+    backgroundColor:"#6C63FF", borderRadius:10, paddingVertical:12,
+    alignItems:"center", width:"100%", marginTop:14,
+  },
+  requestApptBtnText: { color:"#fff", fontSize:13, fontWeight:"700" },
 
   btnRow: { flexDirection:"row", gap:10, marginBottom:20 },
   trackMoodBtn: {
@@ -786,17 +1212,15 @@ const s = StyleSheet.create({
   },
   chatCounselorBtnText: { color:"rgba(255,255,255,0.8)", fontSize:14, fontWeight:"700" },
 
-  logoutBtn: {
-    alignItems:"center", paddingVertical:14,
-    borderRadius:14, borderWidth:1,
-    borderColor:"rgba(255,255,255,0.12)",
-    backgroundColor:"rgba(255,255,255,0.04)",
-  },
-  logoutText: { fontSize:14, color:"rgba(255,255,255,0.4)", fontWeight:"600" },
-
   /* ── Notification Modal ── */
   modalOverlay: {
     flex:1, backgroundColor:"rgba(0,0,0,0.55)",
+  },
+  // Same tappable full-screen area as modalOverlay, but with no dark dimming —
+  // used behind sheets with a drag-to-dismiss handle, since a static overlay
+  // looked disconnected from the sheet sliding away underneath it.
+  noBgOverlay: {
+    flex:1, backgroundColor:"transparent",
   },
   notifSheet: {
     backgroundColor:"#1E2037",
@@ -805,6 +1229,9 @@ const s = StyleSheet.create({
     paddingHorizontal:20,
     paddingTop:12,
     borderWidth:1, borderColor:"rgba(255,255,255,0.08)",
+  },
+  handleTouchArea: {
+    alignItems:"center", paddingVertical:8,
   },
   sheetHandle: {
     width:40, height:4, borderRadius:2,
@@ -817,6 +1244,86 @@ const s = StyleSheet.create({
   },
   sheetTitle: { fontSize:16, fontWeight:"800", color:"#fff" },
   sheetClear: { fontSize:12, color:"rgba(255,255,255,0.4)", fontWeight:"600" },
+
+  /* ── Schedule Appointment modal ── */
+  schedSheet: {
+    backgroundColor:"#181830",
+    borderTopLeftRadius:28, borderTopRightRadius:28,
+    paddingBottom:Platform.OS === "ios" ? 34 : 20,
+    paddingHorizontal:20,
+    paddingTop:12,
+    maxHeight:"88%",
+    borderWidth:1, borderColor:"rgba(255,255,255,0.08)",
+  },
+  schedCloseBtn: {
+    width:26, height:26, borderRadius:13,
+    backgroundColor:"rgba(255,255,255,0.1)",
+    alignItems:"center", justifyContent:"center",
+  },
+  schedSub: { fontSize:13, color:"rgba(255,255,255,0.45)", marginBottom:16 },
+  calNavRow: {
+    flexDirection:"row", alignItems:"center", justifyContent:"space-between",
+    marginBottom:14,
+  },
+  calNavBtn: {
+    width:30, height:30, borderRadius:15,
+    backgroundColor:"rgba(255,255,255,0.08)",
+    alignItems:"center", justifyContent:"center",
+  },
+  calNavLabel: { fontSize:14, fontWeight:"700", color:"#fff" },
+  calWeekRow: { flexDirection:"row", marginBottom:4 },
+  calWeekDay: {
+    width:`${100/7}%`, textAlign:"center",
+    fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.35)",
+  },
+  calGrid: { flexDirection:"row", flexWrap:"wrap", marginBottom:18 },
+  calWeekGridRow: { flexDirection:"row" },
+  // No padding here — padding on top of a percentage width can push 7
+  // columns just past 100% and silently wrap the row after 6 cells instead.
+  calDayCell: { width:`${100/7}%`, aspectRatio:1 },
+  calDay: {
+    flex:1, margin:2, borderRadius:10, alignItems:"center", justifyContent:"center",
+    backgroundColor:"rgba(255,255,255,0.04)",
+  },
+  calDayText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  calDayToday: { borderWidth:1.5, borderColor:"rgba(108,99,255,0.6)" },
+  calDayActive: { backgroundColor:"#6C63FF" },
+  calDayDisabled: { backgroundColor:"transparent" },
+  schedSectionLabel: {
+    fontSize:11, fontWeight:"700", color:"rgba(255,255,255,0.4)",
+    letterSpacing:1, marginBottom:10,
+  },
+  schedEmptyText: {
+    fontSize:13, color:"rgba(255,255,255,0.4)", textAlign:"center",
+    paddingVertical:20,
+  },
+  slotGrid: { flexDirection:"row", flexWrap:"wrap", gap:8, marginBottom:8 },
+  slotBtn: {
+    width:"31%", paddingVertical:10, borderRadius:10,
+    backgroundColor:"rgba(255,255,255,0.05)",
+    alignItems:"center",
+  },
+  slotBtnActive: { backgroundColor:"#6C63FF" },
+  slotBtnDisabled: { backgroundColor:"rgba(255,255,255,0.02)" },
+  slotBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  slotBtnTextDisabled: { color:"rgba(255,255,255,0.2)", textDecorationLine:"line-through" },
+  counselorRow: { flexDirection:"row", flexWrap:"wrap", gap:8, marginBottom:8 },
+  counselorBtn: {
+    paddingVertical:10, paddingHorizontal:14, borderRadius:10,
+    backgroundColor:"rgba(255,255,255,0.05)",
+  },
+  counselorBtnActive: { backgroundColor:"#6C63FF" },
+  counselorBtnText: { fontSize:13, fontWeight:"600", color:"#fff" },
+  counselorBtnTextActive: { color:"#fff" },
+  schedErrText: {
+    fontSize:13, fontWeight:"600", color:"#F87171",
+    textAlign:"center", marginTop:12,
+  },
+  schedConfirmBtn: {
+    marginTop:20, paddingVertical:14, borderRadius:12,
+    backgroundColor:"#6C63FF", alignItems:"center",
+  },
+  schedConfirmBtnText: { fontSize:15, fontWeight:"700", color:"#fff" },
   notifEmpty: { alignItems:"center", paddingVertical:32 },
   notifEmptyText: { fontSize:14, color:"rgba(255,255,255,0.35)", fontWeight:"600" },
   notifItem: {
@@ -830,7 +1337,7 @@ const s = StyleSheet.create({
   notifTime: { fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:4 },
 
   /* ── Pick mood ── */
-  pickContent: { paddingHorizontal:22, paddingTop:16, paddingBottom:32 },
+  pickContent: { paddingHorizontal:22, paddingTop: 16 + ANDROID_STATUS_BAR_PAD, paddingBottom:32 },
   topRow: { flexDirection:"row", alignItems:"center", marginBottom:28 },
   backCircle: {
     width:40, height:40, borderRadius:20,
@@ -845,6 +1352,15 @@ const s = StyleSheet.create({
   heroEmoji: { fontSize:52, marginBottom:14 },
   heroTitle: { fontSize:30, fontWeight:"800", color:"#fff", textAlign:"center", lineHeight:38, letterSpacing:-0.5, marginBottom:10 },
   heroSub: { fontSize:14, color:"rgba(255,255,255,0.5)", textAlign:"center", lineHeight:21 },
+  choiceCard: {
+    flexDirection:"row", alignItems:"center", gap:14,
+    borderRadius:20, padding:18,
+    shadowColor:"#000", shadowOffset:{width:0,height:8}, shadowOpacity:0.25, shadowRadius:14, elevation:8,
+  },
+  choiceCardEmoji: { fontSize:30 },
+  choiceCardTitle: { fontSize:16, fontWeight:"800", color:"#fff" },
+  choiceCardSub: { fontSize:12, color:"rgba(255,255,255,0.75)", marginTop:2 },
+  choiceCardArrow: { fontSize:20, color:"rgba(255,255,255,0.85)", fontWeight:"700" },
   moodGrid: { flexDirection:"row", flexWrap:"wrap", justifyContent:"space-between", gap:14 },
   moodCardTouch: { borderRadius:24, shadowColor:"#000", shadowOffset:{width:0,height:10}, shadowOpacity:0.3, shadowRadius:18, elevation:10 },
   moodCard: { borderRadius:24, padding:22, height:156, justifyContent:"space-between", overflow:"hidden" },
@@ -856,7 +1372,7 @@ const s = StyleSheet.create({
   hint: { color:"rgba(255,255,255,0.3)", fontSize:12, fontWeight:"500", letterSpacing:0.5 },
 
   /* ── Note step ── */
-  noteContent: { paddingHorizontal:24, paddingTop:20, paddingBottom:48 },
+  noteContent: { paddingHorizontal:24, paddingTop: 20 + ANDROID_STATUS_BAR_PAD, paddingBottom:48 },
   backBtn: { alignSelf:"flex-start", paddingVertical:8, paddingHorizontal:4, marginBottom:20 },
   backBtnText: { color:"rgba(255,255,255,0.75)", fontSize:15, fontWeight:"600" },
   bigEmojiWrap: { width:120, height:120, borderRadius:60, backgroundColor:"rgba(255,255,255,0.2)", justifyContent:"center", alignItems:"center", marginBottom:14, borderWidth:2, borderColor:"rgba(255,255,255,0.3)" },
@@ -879,7 +1395,7 @@ const s = StyleSheet.create({
   skipBtnText: { color:"rgba(255,255,255,0.45)", fontSize:13, fontWeight:"500" },
 
   /* ── Profile ── */
-  profileContent: { paddingHorizontal:22, paddingTop:16, paddingBottom:48 },
+  profileContent: { paddingHorizontal:22, paddingTop: 16 + ANDROID_STATUS_BAR_PAD, paddingBottom:48 },
   avatarWrap: { alignItems:"center", marginBottom:28, marginTop:8 },
   avatarCircle: { width:80, height:80, borderRadius:40, justifyContent:"center", alignItems:"center", marginBottom:12 },
   avatarLetter: { fontSize:34, fontWeight:"800", color:"#fff" },
@@ -900,12 +1416,22 @@ const s = StyleSheet.create({
     paddingVertical: Platform.OS === "ios" ? 14 : 10,
     fontSize:15, color:"#fff",
   },
+  infoBox: {
+    backgroundColor:"rgba(255,255,255,0.05)",
+    borderRadius:14, borderWidth:1.5, borderColor:"rgba(255,255,255,0.1)",
+    paddingHorizontal:16, paddingVertical:14,
+  },
+  infoBoxText: { fontSize:15, color:"#fff" },
   pwBtn: { borderRadius:14, paddingVertical:16, alignItems:"center", marginTop:4, shadowColor:"#6C63FF", shadowOffset:{width:0,height:6}, shadowOpacity:0.3, shadowRadius:12, elevation:5 },
   pwBtnText: { color:"#fff", fontSize:15, fontWeight:"700" },
   logoutBtnLg: {
     borderRadius:16, paddingVertical:16, alignItems:"center",
     backgroundColor:"rgba(248,113,113,0.1)",
     borderWidth:1, borderColor:"rgba(248,113,113,0.25)",
+  },
+  versionFooter: {
+    marginTop:16, textAlign:"center",
+    fontSize:11, color:"rgba(255,255,255,0.25)",
   },
   logoutLgText: { fontSize:15, fontWeight:"700", color:"#F87171" },
 

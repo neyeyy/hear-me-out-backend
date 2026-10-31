@@ -2,6 +2,43 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import API from "../../services/api";
 import MoodCalendar from "../../components/MoodCalendar";
+import logo from "../../logo.png";
+
+const MOOD_QUOTES = {
+  HAPPY: [
+    "Your joy matters — let it fill every corner of your day. Keep shining! 🌟",
+    "Happiness looks good on you. Carry this feeling forward and share it generously. 😊",
+    "You are allowed to feel this good. Celebrate the small wins — they add up to great things. 🎉",
+    "Good days are proof that great ones are possible. Enjoy every moment of this one! 🌈",
+    "Your smile is contagious. The world is genuinely better because you are in it today. 💛",
+  ],
+  SAD: [
+    "It takes real strength to sit with hard feelings. Every storm runs out of rain. 💙",
+    "You don't have to be okay right now. Rest, and come back stronger. 🌙",
+    "Sadness is not weakness — it means you cared deeply. That's a beautiful thing. 💜",
+    "Even the darkest night will end, and the sun will rise again. You are not alone. 🌅",
+    "Tears water the seeds of your next growth. Be gentle with yourself today. 🌱",
+  ],
+  STRESSED: [
+    "You have survived 100% of your hardest days. Take one slow breath — you are enough. 🌿",
+    "Progress, not perfection. You are doing better than you think. One step at a time. 🚶",
+    "Stress means you care. Channel it into focus, and watch what you can accomplish. 💪",
+    "Put down what you can't carry alone. Asking for help is a sign of wisdom, not weakness. 🤝",
+    "Your mind is full right now. Pause, breathe, and do just the next small thing. That's enough. 🍃",
+  ],
+  ANXIOUS: [
+    "Right here, right now — you are safe. This wave will pass, and you will still be standing. 🌈",
+    "Breathe in for 4 counts, hold for 4, out for 4. You are in control of this moment. 🧘",
+    "Anxiety is not a fact — it's a feeling. Feelings pass. You are bigger than your worry. 🌸",
+    "You've faced uncertainty before and made it through. You have everything you need. ✨",
+    "Ground yourself: name 5 things you see, 4 you feel, 3 you hear. You are here. You are okay. 🕊️",
+  ],
+};
+
+const pickQuote = (key) => {
+  const list = MOOD_QUOTES[key] || ["Stay positive and take care of yourself."];
+  return list[Math.floor(Math.random() * list.length)];
+};
 
 const MOODS = [
   {
@@ -10,7 +47,6 @@ const MOODS = [
     label: "Happy",
     gradient: "linear-gradient(135deg,#4ECDC4 0%,#44A08D 100%)",
     glow: "rgba(78,205,196,0.4)",
-    quote: "Your joy matters — let it fill every corner of your day. You deserve every bit of this happiness. Keep shining, the world is brighter with you in it! 🌟",
   },
   {
     key: "SAD",
@@ -18,7 +54,6 @@ const MOODS = [
     label: "Sad",
     gradient: "linear-gradient(135deg,#6C63FF 0%,#9B59B6 100%)",
     glow: "rgba(108,99,255,0.4)",
-    quote: "It takes real strength to sit with hard feelings. You are not alone in this — every storm runs out of rain. Reaching out today is already an act of courage. 💙",
   },
   {
     key: "STRESSED",
@@ -26,7 +61,6 @@ const MOODS = [
     label: "Stressed",
     gradient: "linear-gradient(135deg,#F7971E 0%,#FFD200 100%)",
     glow: "rgba(247,151,30,0.4)",
-    quote: "You have survived 100% of your hardest days — that record stays perfect. Take one slow breath. You don't have to solve everything right now. You are enough. 🌿",
   },
   {
     key: "ANXIOUS",
@@ -34,7 +68,6 @@ const MOODS = [
     label: "Anxious",
     gradient: "linear-gradient(135deg,#FF6B6B 0%,#FF8E53 100%)",
     glow: "rgba(255,107,107,0.4)",
-    quote: "Right here, right now — you are safe. Anxiety is your mind trying to protect you, not predict the future. This wave will pass, and you will still be standing. 🌈",
   },
 ];
 
@@ -43,6 +76,8 @@ const STATUS_MAP = {
   ONGOING: { label: "Ongoing",   color: "#6C63FF", bg: "rgba(108,99,255,0.1)", border: "rgba(108,99,255,0.3)" },
   DONE:    { label: "Completed", color: "#4ECDC4", bg: "rgba(78,205,196,0.1)",  border: "rgba(78,205,196,0.3)" },
 };
+
+const SESSION_MINUTES = { HIGH: 60, MEDIUM: 60, LOW: 30 };
 
 // step: "pick" | "note" | "dashboard"
 export default function StudentDashboard() {
@@ -60,17 +95,43 @@ export default function StudentDashboard() {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg,    setPwMsg]     = useState({ text:"", ok:false });
   const [history,  setHistory]   = useState([]);
-  const [cancelMsg, setCancelMsg] = useState({ text:"", ok:false });
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [cancelMsg,    setCancelMsg]    = useState({ text:"", ok:false });
+  const [cancelReason, setCancelReason] = useState("");
+  const [requestMsg,   setRequestMsg]   = useState({ text:"", ok:false });
+  const [requesting,   setRequesting]   = useState(false);
+  const [schedModalOpen, setSchedModalOpen] = useState(false);
+  const [schedDate,     setSchedDate]     = useState("");
+  const [schedMonth,    setSchedMonth]    = useState(new Date());
+  const [schedSlots,    setSchedSlots]    = useState([]);
+  const [schedTime,     setSchedTime]     = useState("");
+  const [schedLoading,  setSchedLoading]  = useState(false);
+  const [schedErr,      setSchedErr]      = useState("");
+  const [upcomingAlert, setUpcomingAlert] = useState(null);
+  const [unreadMsg,    setUnreadMsg]    = useState(0);
+  const [randomQuote,  setRandomQuote]  = useState("");
   const navigate = useNavigate();
 
   const userName  = localStorage.getItem("name")  || "Student";
   const userEmail = localStorage.getItem("email") || "";
 
+  // Visiting /student directly (bookmark, typed URL) without a valid student
+  // session used to render a broken, empty dashboard instead of the login page.
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const role = localStorage.getItem("role");
+    if (!token || role !== "student") {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
+
   useEffect(() => {
     fetchAppointment();
     fetchHistory();
-    const iv = setInterval(fetchAppointment, 5000);
-    return () => clearInterval(iv);
+    fetchUnread();
+    const iv1 = setInterval(fetchAppointment, 5000);
+    const iv2 = setInterval(fetchUnread, 8000);
+    return () => { clearInterval(iv1); clearInterval(iv2); };
   }, []);
 
   const fetchHistory = async () => {
@@ -80,13 +141,97 @@ export default function StudentDashboard() {
     } catch (e) { console.log(e); }
   };
 
+  const fetchUnread = async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    try {
+      const res = await API.get(`/messages/unread/${userId}`);
+      setUnreadMsg(res.data.count || 0);
+    } catch (e) {}
+  };
+
+  // ── Calendar-based appointment booking ───────────────────────
+  const toDateStr = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const startOfToday = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+
+  const isSelectableDay = (d) => {
+    const dow = d.getDay();
+    return dow !== 0 && d >= startOfToday(); // Sunday closed; Saturday has a counselor in
+  };
+
+  // Full month grid: leading blanks so the 1st lands on its real weekday, then every day in the month
+  const getMonthGrid = (monthDate) => {
+    const year = monthDate.getFullYear(), month = monthDate.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = Array(firstDow).fill(null);
+    for (let day = 1; day <= daysInMonth; day++) cells.push(new Date(year, month, day));
+    return cells;
+  };
+
+  const goToMonth = (offset) => {
+    setSchedMonth(m => new Date(m.getFullYear(), m.getMonth() + offset, 1));
+  };
+
+  const fetchSlotsForDate = async (dateStr) => {
+    setSchedLoading(true);
+    setSchedTime("");
+    try {
+      const res = await API.get(`/appointments/available-slots?date=${dateStr}`);
+      setSchedSlots(res.data.success ? (res.data.slots || []) : []);
+    } catch (e) {
+      setSchedSlots([]);
+    } finally {
+      setSchedLoading(false);
+    }
+  };
+
+  const openScheduleModal = () => {
+    let d = startOfToday();
+    while (!isSelectableDay(d)) d = new Date(d.getTime() + 86400000);
+    const firstDay = toDateStr(d);
+    setRequestMsg({ text:"", ok:false });
+    setSchedErr("");
+    setSchedMonth(d);
+    setSchedDate(firstDay);
+    setSchedModalOpen(true);
+    fetchSlotsForDate(firstDay);
+  };
+
+  const handleConfirmSchedule = async () => {
+    if (!schedDate || !schedTime) return;
+    setRequesting(true);
+    setSchedErr("");
+    try {
+      const dt = new Date(`${schedDate}T${schedTime}:00`);
+      const res = await API.post("/appointments", { scheduleDate: dt });
+      if (res.data.success) {
+        setSchedModalOpen(false);
+        setRequestMsg({ text:"Appointment scheduled!", ok:true });
+        fetchAppointment();
+        fetchHistory();
+      } else {
+        setSchedErr(res.data.message || "Could not schedule that slot.");
+        fetchSlotsForDate(schedDate); // refresh in case someone else just took it
+      }
+    } catch (e) {
+      setSchedErr(e.response?.data?.message || "Error scheduling appointment.");
+    } finally {
+      setRequesting(false);
+    }
+  };
+
   const handleCancelAppointment = async () => {
     if (!appointment?._id) return;
     setCancelMsg({ text:"", ok:false });
     try {
-      const res = await API.patch(`/appointments/${appointment._id}/cancel`);
+      const res = await API.patch(`/appointments/${appointment._id}/cancel`, { cancelReason });
       if (res.data.success) {
         setCancelMsg({ text:"Appointment cancelled.", ok:true });
+        setRequestMsg({ text:"", ok:false });
+        setCancelReason("");
         fetchAppointment();
         fetchHistory();
       } else {
@@ -101,7 +246,23 @@ export default function StudentDashboard() {
     try {
       const res = await API.get("/appointments/my");
       const d = res.data;
-      setAppt(Array.isArray(d) ? (d[0] || null) : d);
+      const appt = Array.isArray(d) ? (d[0] || null) : d;
+      setAppt(appt);
+      // Show appointment notification whenever a PENDING appointment exists
+      if (appt?.scheduleDate && appt.status === "PENDING") {
+        const diffMs  = new Date(appt.scheduleDate) - new Date();
+        const diffHrs = diffMs / (1000 * 60 * 60);
+        const timeStr = new Date(appt.scheduleDate).toLocaleString("en-US", { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
+        if (diffHrs >= 0 && diffHrs <= 24) {
+          setUpcomingAlert(`🔔 Your appointment is TODAY at ${new Date(appt.scheduleDate).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}!`);
+        } else if (diffMs > 0) {
+          setUpcomingAlert(`📅 Appointment scheduled: ${timeStr}`);
+        } else {
+          setUpcomingAlert(null);
+        }
+      } else {
+        setUpcomingAlert(null);
+      }
     } catch (e) { console.log(e); }
   };
 
@@ -165,7 +326,7 @@ export default function StudentDashboard() {
           {/* Hero */}
           <div style={p.hero}>
             <div style={p.heroRing}>
-              <span style={{fontSize:"36px"}}>💙</span>
+              <img src={logo} alt="Hear Me Out" style={{ width:"48px", height:"48px", objectFit:"contain" }} />
             </div>
             <h1 style={p.h1}>How are you feeling today?</h1>
             <p style={p.heroSub}>Check in with yourself. Your wellbeing matters.</p>
@@ -178,7 +339,7 @@ export default function StudentDashboard() {
               return (
                 <button
                   key={m.key}
-                  onClick={() => { setSelected(m); setStep("note"); }}
+                  onClick={() => { setSelected(m); setRandomQuote(pickQuote(m.key)); setStep("note"); }}
                   onMouseEnter={() => setHovered(m.key)}
                   onMouseLeave={() => setHovered(null)}
                   style={{
@@ -222,7 +383,7 @@ export default function StudentDashboard() {
                 <span style={p.affirmIcon}>💬</span>
                 <span style={p.affirmTag}>A message for you</span>
               </div>
-              <p style={p.affirmQuote}>{selected.quote}</p>
+              <p style={p.affirmQuote}>{randomQuote}</p>
               <div style={p.affirmDivider} />
               <p style={p.affirmSub}>
                 Your feelings are valid. You're doing better than you think. 🌱
@@ -257,11 +418,30 @@ export default function StudentDashboard() {
       {step === "dashboard" && (
         <div className="animate-fadeIn" style={p.dashWrap}>
 
+          {/* Appointment notification */}
+          {upcomingAlert && (
+            <div style={p.upcomingBanner}>
+              <span style={p.upcomingText}>{upcomingAlert}</span>
+            </div>
+          )}
+
+          {/* Unread message notification */}
+          {unreadMsg > 0 && (
+            <div
+              style={{ ...p.upcomingBanner, background:"rgba(108,99,255,0.15)", borderColor:"rgba(108,99,255,0.4)", cursor:"pointer", marginTop: upcomingAlert ? "8px" : "0" }}
+              onClick={() => navigate("/chat")}
+            >
+              <span style={{ ...p.upcomingText, color:"#a78bfa" }}>
+                💬 You have {unreadMsg} unread message{unreadMsg > 1 ? "s" : ""} from your counselor — tap to reply
+              </span>
+            </div>
+          )}
+
           {/* Dashboard header */}
           <div style={p.dashHeader}>
-            <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-              <span style={{ fontSize:"28px", lineHeight:1 }}>💙</span>
-              <div>
+            <div style={{ display:"flex", alignItems:"center", gap:"14px" }}>
+              <img src={logo} alt="Hear Me Out" style={{ width:"52px", height:"52px", objectFit:"contain", flexShrink:0 }} />
+              <div style={{ marginTop:"2px" }}>
                 <h2 style={{ ...p.dashTitle, margin:0 }}>Hear Me Out</h2>
                 <p style={p.dashSub}>Track your mood and appointments</p>
               </div>
@@ -296,11 +476,17 @@ export default function StudentDashboard() {
                 </div>
                 <div style={p.apptRow}>
                   <span style={p.apptKey}>Counselor</span>
-                  <span style={p.apptVal}>{appointment.assignedTo || "—"}</span>
+                  <span style={p.apptVal}>{appointment.counselorName || appointment.assignedTo || "—"}</span>
                 </div>
                 <div style={p.apptRow}>
                   <span style={p.apptKey}>Severity</span>
                   <span style={p.apptVal}>{appointment.severity}</span>
+                </div>
+                <div style={p.apptRow}>
+                  <span style={p.apptKey}>Session length</span>
+                  <span style={p.apptVal}>
+                    {appointment.durationMinutes || SESSION_MINUTES[appointment.severity] || 30} min
+                  </span>
                 </div>
                 {appointment.scheduleDate && (
                   <div style={{ ...p.apptRow, borderBottom: "none" }}>
@@ -312,6 +498,12 @@ export default function StudentDashboard() {
                 )}
                 {appointment.status === "PENDING" && (
                   <div style={{ padding: "12px 0 0" }}>
+                    <textarea
+                      placeholder="Reason for cancellation (optional)…"
+                      value={cancelReason}
+                      onChange={e => setCancelReason(e.target.value.slice(0,200))}
+                      style={{ ...p.textarea, minHeight:"64px", marginBottom:"10px", fontSize:"13px" }}
+                    />
                     {cancelMsg.text && (
                       <div style={{ fontSize:"13px", fontWeight:600, textAlign:"center", color: cancelMsg.ok ? "#4ECDC4" : "#F87171", marginBottom:"8px" }}>
                         {cancelMsg.text}
@@ -325,8 +517,21 @@ export default function StudentDashboard() {
               </div>
             ) : (
               <div style={p.noAppt}>
-                <span style={{ fontSize: "26px" }}>📋</span>
-                <span style={p.noApptText}>No appointment scheduled yet</span>
+                <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
+                  <span style={{ fontSize: "26px" }}>📋</span>
+                  <span style={p.noApptText}>No appointment scheduled yet</span>
+                </div>
+                <button
+                  onClick={openScheduleModal}
+                  style={{ ...p.cancelApptBtn, width:"100%", color:"#fff", border:"none", background:"linear-gradient(135deg,#6C63FF,#764ba2)" }}
+                >
+                  📅 Schedule an Appointment
+                </button>
+                {requestMsg.text && (
+                  <div style={{ fontSize:"13px", fontWeight:600, textAlign:"center", color: requestMsg.ok ? "#4ECDC4" : "#F87171" }}>
+                    {requestMsg.text}
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -336,7 +541,7 @@ export default function StudentDashboard() {
             <section style={p.section}>
               <p style={p.sectionLabel}>APPOINTMENT HISTORY</p>
               <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
-                {history.map((h, i) => {
+                {(showAllHistory ? history : history.slice(0, 3)).map((h, i) => {
                   const meta = { PENDING:{c:"#F7971E"}, ONGOING:{c:"#6C63FF"}, DONE:{c:"#4ECDC4"}, CANCELLED:{c:"#9CA3AF"} };
                   const m = meta[h.status] || { c:"#9CA3AF" };
                   return (
@@ -352,6 +557,14 @@ export default function StudentDashboard() {
                   );
                 })}
               </div>
+              {history.length > 3 && (
+                <p
+                  onClick={() => setShowAllHistory(v => !v)}
+                  style={p.historyToggle}
+                >
+                  {showAllHistory ? "Show less ▲" : `Show all ${history.length} past appointments ▾`}
+                </p>
+              )}
             </section>
           )}
 
@@ -365,23 +578,106 @@ export default function StudentDashboard() {
             </button>
           </div>
 
-          {/* 🧄 Ad Banner */}
-          <div style={p.adCard}>
-            <img
-              src="https://upload.wikimedia.org/wikipedia/commons/4/48/Cabanatuan_garlic_longganisa6.jpg"
-              alt="Cabanatuan Garlic Longganisa"
-              style={p.adImg}
-            />
-            <div style={p.adContent}>
-              <span style={p.adTag}>Featured Local Product 🇵🇭</span>
-              <h3 style={p.adTitle}>Cabanatuan Garlic Longganisa</h3>
-              <p style={p.adDesc}>
-                Nueva Ecija's pride — sweet, garlicky, and bursting with flavor.
-                The perfect breakfast treat to brighten your morning! 🧄🌟
-              </p>
-              <span style={p.adCta}>Order now at your local market →</span>
+          {/* ── Schedule Appointment modal ── */}
+          {schedModalOpen && (
+            <div style={p.modalOverlay} onClick={() => setSchedModalOpen(false)}>
+              <div style={p.modalCard} onClick={e => e.stopPropagation()}>
+                <div style={p.modalHeader}>
+                  <h3 style={p.modalTitle}>Schedule Your Appointment</h3>
+                  <button onClick={() => setSchedModalOpen(false)} style={p.modalCloseBtn}>✕</button>
+                </div>
+                <p style={p.modalSub}>Pick a date and an open time slot below.</p>
+
+                {/* Full month calendar */}
+                <div style={p.calNavRow}>
+                  <button
+                    onClick={() => goToMonth(-1)}
+                    disabled={schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()}
+                    style={{ ...p.calNavBtn, opacity: (schedMonth.getFullYear() === startOfToday().getFullYear() && schedMonth.getMonth() === startOfToday().getMonth()) ? 0.3 : 1 }}
+                  >‹</button>
+                  <span style={p.calNavLabel}>
+                    {schedMonth.toLocaleDateString("en-US", { month:"long", year:"numeric" })}
+                  </span>
+                  <button onClick={() => goToMonth(1)} style={p.calNavBtn}>›</button>
+                </div>
+
+                <div style={p.calWeekRow}>
+                  {["S","M","T","W","T","F","S"].map((d,i) => (
+                    <span key={i} style={p.calWeekDay}>{d}</span>
+                  ))}
+                </div>
+
+                <div style={p.calGrid}>
+                  {getMonthGrid(schedMonth).map((d, i) => {
+                    if (!d) return <span key={i} />;
+                    const dStr = toDateStr(d);
+                    const isSel = dStr === schedDate;
+                    const isToday = dStr === toDateStr(startOfToday());
+                    const selectable = isSelectableDay(d);
+                    return (
+                      <button
+                        key={i}
+                        disabled={!selectable}
+                        onClick={() => { setSchedDate(dStr); fetchSlotsForDate(dStr); }}
+                        style={{
+                          ...p.calDay,
+                          ...(isSel ? p.calDayActive : {}),
+                          ...(!selectable ? p.calDayDisabled : {}),
+                          ...(isToday && !isSel ? p.calDayToday : {}),
+                        }}
+                      >
+                        {d.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Time slots */}
+                <p style={p.modalSectionLabel}>AVAILABLE TIMES</p>
+                {schedLoading ? (
+                  <div style={{ padding:"30px 0", textAlign:"center", color:"rgba(255,255,255,0.4)", fontSize:"13px" }}>
+                    Loading slots…
+                  </div>
+                ) : schedSlots.every(sl => !sl.available) ? (
+                  <div style={{ padding:"20px 0", textAlign:"center", color:"rgba(255,255,255,0.4)", fontSize:"13px" }}>
+                    No open slots this day — try another date.
+                  </div>
+                ) : (
+                  <div style={p.slotGrid}>
+                    {schedSlots.map(sl => (
+                      <button
+                        key={sl.value}
+                        disabled={!sl.available}
+                        onClick={() => setSchedTime(sl.value)}
+                        style={{
+                          ...p.slotBtn,
+                          ...(schedTime === sl.value ? p.slotBtnActive : {}),
+                          ...(!sl.available ? p.slotBtnDisabled : {}),
+                        }}
+                      >
+                        {sl.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {schedErr && (
+                  <div style={{ fontSize:"13px", fontWeight:600, textAlign:"center", color:"#F87171", marginTop:"12px" }}>
+                    {schedErr}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleConfirmSchedule}
+                  disabled={!schedTime || requesting}
+                  style={{ ...p.modalConfirmBtn, opacity: (!schedTime || requesting) ? 0.5 : 1, cursor: (!schedTime || requesting) ? "not-allowed" : "pointer" }}
+                >
+                  {requesting ? "Scheduling…" : "Confirm Appointment"}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+
         </div>
       )}
 
@@ -539,11 +835,11 @@ const p = {
     fontFamily: "'Poppins',sans-serif",
   },
   heroSub: {
-    fontSize: "15px",
+    fontSize: "16px",
     fontWeight: 400,
-    color: "rgba(255,255,255,0.52)",
+    color: "rgba(255,255,255,0.62)",
     margin: 0,
-    lineHeight: 1.65,
+    lineHeight: 1.7,
   },
   grid: {
     display: "grid",
@@ -714,10 +1010,10 @@ const p = {
     fontFamily: "'Poppins',sans-serif",
   },
   affirmQuote: {
-    fontSize: "16px",
+    fontSize: "17px",
     fontWeight: 400,
     color: "#fff",
-    lineHeight: 1.75,
+    lineHeight: 1.8,
     margin: "0 0 16px",
     fontFamily: "'Lato',sans-serif",
     fontStyle: "italic",
@@ -828,6 +1124,24 @@ const p = {
     textUnderlineOffset: "3px",
   },
 
+  /* ── Upcoming alert ── */
+  upcomingBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    background: "rgba(78,205,196,0.15)",
+    border: "1.5px solid rgba(78,205,196,0.4)",
+    borderRadius: "14px",
+    padding: "14px 18px",
+    marginBottom: "20px",
+  },
+  upcomingText: {
+    fontSize: "15px",
+    fontWeight: 600,
+    color: "#4ECDC4",
+    fontFamily: "'Poppins',sans-serif",
+  },
+
   /* ── Dashboard ── */
   dashWrap: {
     width: "100%",
@@ -843,18 +1157,19 @@ const p = {
     marginBottom: "32px",
   },
   dashTitle: {
-    fontSize: "26px",
+    fontSize: "28px",
     fontWeight: 700,
     color: "#fff",
-    margin: "0 0 4px",
+    margin: "0 0 5px",
     letterSpacing: "-0.4px",
     fontFamily: "'Poppins',sans-serif",
   },
   dashSub: {
-    fontSize: "14px",
-    fontWeight: 400,
-    color: "rgba(255,255,255,0.48)",
+    fontSize: "15px",
+    fontWeight: 500,
+    color: "rgba(255,255,255,0.7)",
     margin: 0,
+    lineHeight: 1.4,
   },
   trackBtn: {
     padding: "10px 20px",
@@ -894,6 +1209,15 @@ const p = {
     letterSpacing: "0.1em",
     margin: "0 0 10px",
   },
+  historyToggle: {
+    margin: "12px 0 0",
+    fontSize: "13px",
+    fontWeight: 600,
+    color: "#6C63FF",
+    textAlign: "center",
+    cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+  },
   apptCard: {
     borderRadius: "16px",
     padding: "4px 18px",
@@ -907,20 +1231,21 @@ const p = {
     borderBottom: "1px solid rgba(255,255,255,0.06)",
   },
   apptKey: {
-    fontSize: "11px",
+    fontSize: "13px",
     fontWeight: 700,
-    color: "rgba(255,255,255,0.42)",
-    letterSpacing: "0.06em",
+    color: "rgba(255,255,255,0.55)",
+    letterSpacing: "0.04em",
     textTransform: "uppercase",
     fontFamily: "'Poppins',sans-serif",
   },
   apptVal: {
-    fontSize: "14px",
+    fontSize: "15px",
     fontWeight: 600,
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(255,255,255,0.9)",
   },
   noAppt: {
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     gap: "12px",
     padding: "18px 20px",
@@ -939,6 +1264,101 @@ const p = {
     borderRadius: "10px", fontSize: "13px", fontWeight: 600,
     cursor: "pointer", fontFamily: "'Poppins',sans-serif",
     transition: "all 0.15s",
+  },
+
+  /* ── Schedule Appointment modal ── */
+  modalOverlay: {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    zIndex: 999, padding: "20px",
+  },
+  modalCard: {
+    width: "100%", maxWidth: "440px", maxHeight: "88vh", overflowY: "auto",
+    background: "#181830", border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: "20px", padding: "24px", boxShadow: "0 24px 60px rgba(0,0,0,0.5)",
+  },
+  modalHeader: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    marginBottom: "4px",
+  },
+  modalTitle: {
+    fontSize: "18px", fontWeight: 800, color: "#fff", margin: 0,
+    fontFamily: "'Poppins',sans-serif",
+  },
+  modalCloseBtn: {
+    background: "rgba(255,255,255,0.08)", border: "none", color: "#fff",
+    width: "28px", height: "28px", borderRadius: "50%", cursor: "pointer",
+    fontSize: "13px", flexShrink: 0,
+  },
+  modalSub: {
+    fontSize: "13px", color: "rgba(255,255,255,0.45)", margin: "0 0 18px",
+  },
+  calNavRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    marginBottom: "14px",
+  },
+  calNavBtn: {
+    width: "30px", height: "30px", borderRadius: "50%", flexShrink: 0,
+    background: "rgba(255,255,255,0.08)", border: "none", color: "#fff",
+    fontSize: "16px", cursor: "pointer", display: "flex",
+    alignItems: "center", justifyContent: "center",
+  },
+  calNavLabel: {
+    fontSize: "14px", fontWeight: 700, color: "#fff",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  calWeekRow: {
+    display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+    marginBottom: "6px",
+  },
+  calWeekDay: {
+    textAlign: "center", fontSize: "11px", fontWeight: 700,
+    color: "rgba(255,255,255,0.35)", fontFamily: "'Poppins',sans-serif",
+  },
+  calGrid: {
+    display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "4px",
+    marginBottom: "18px",
+  },
+  calDay: {
+    aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center",
+    borderRadius: "10px", background: "rgba(255,255,255,0.04)", border: "none",
+    color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif",
+  },
+  calDayToday: {
+    border: "1.5px solid rgba(108,99,255,0.6)",
+  },
+  calDayActive: {
+    background: "linear-gradient(135deg,#6C63FF,#764ba2)", fontWeight: 800,
+  },
+  calDayDisabled: {
+    color: "rgba(255,255,255,0.15)", cursor: "not-allowed", background: "transparent",
+  },
+  modalSectionLabel: {
+    fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.4)",
+    letterSpacing: "0.08em", margin: "0 0 10px",
+  },
+  slotGrid: {
+    display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px",
+  },
+  slotBtn: {
+    padding: "10px 4px", borderRadius: "10px", fontSize: "13px", fontWeight: 600,
+    background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(255,255,255,0.12)",
+    color: "#fff", cursor: "pointer", fontFamily: "'Poppins',sans-serif",
+  },
+  slotBtnActive: {
+    background: "linear-gradient(135deg,#6C63FF,#764ba2)",
+    border: "1.5px solid transparent",
+  },
+  slotBtnDisabled: {
+    background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.05)",
+    color: "rgba(255,255,255,0.2)", cursor: "not-allowed", textDecoration: "line-through",
+  },
+  modalConfirmBtn: {
+    width: "100%", marginTop: "20px", padding: "14px", border: "none",
+    borderRadius: "12px", background: "linear-gradient(135deg,#6C63FF,#764ba2)",
+    color: "#fff", fontSize: "15px", fontWeight: 700, fontFamily: "'Poppins',sans-serif",
+    boxShadow: "0 8px 20px rgba(108,99,255,0.35)",
   },
   btnRow: {
     display: "flex",

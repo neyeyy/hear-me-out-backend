@@ -3,8 +3,9 @@ const Appointment = require("../models/Appointment");
 const User = require("../models/User");
 
 /* ── Scheduling helpers ──────────────────────────────────────
-   Office hours: Mon–Fri, 9:00–11:30 and 13:00–15:30 (30-min slots)
+   Office hours: Mon–Sat, 9:00–11:30 and 13:00–15:30 (30-min slots)
    Lunch break:  12:00–12:59 → no appointments
+   Sunday: closed. Max 4 students booked per day.
 ─────────────────────────────────────────────────────────────── */
 const TIME_SLOTS = [
   { h: 9,  m: 0  }, { h: 9,  m: 30 },
@@ -15,15 +16,93 @@ const TIME_SLOTS = [
   { h: 15, m: 0  }, { h: 15, m: 30 },
 ];
 
+// Hard cap on how many students can be scheduled in a single day, regardless
+// of how many individual time slots are technically still open.
+const MAX_APPTS_PER_DAY = 4;
+
+// Advance Sunday → Monday. Saturday is a regular office day (a counselor is
+// in on Saturdays), so it's left alone.
 function skipToWeekday(date) {
   const d = new Date(date);
   const dow = d.getDay();
-  if (dow === 6) d.setDate(d.getDate() + 2);
   if (dow === 0) d.setDate(d.getDate() + 1);
   return d;
 }
 
-async function findNextAvailableSlot(daysFromNow) {
+// How many students already have an active appointment on this calendar day?
+async function countActiveApptsOnDay(date) {
+  const dayStart = new Date(date); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd   = new Date(date); dayEnd.setHours(23, 59, 59, 999);
+  return Appointment.countDocuments({
+    scheduleDate: { $gte: dayStart, $lte: dayEnd },
+    status: { $in: ['PENDING', 'ONGOING'] },
+  });
+}
+
+// Session length by severity — a more severe case gets a longer session.
+const DURATION_BY_SEVERITY = { HIGH: 60, MEDIUM: 60, LOW: 30 };
+function durationFor(severity) { return DURATION_BY_SEVERITY[severity] || 30; }
+
+// Older appointments (created before session lengths existed) have no
+// durationMinutes stored — derive it from their severity instead of
+// silently treating them as a 30-min LOW session.
+function effectiveDuration(appt) { return appt.durationMinutes || durationFor(appt.severity); }
+
+/* ── PHQ-9 / GAD-7 scoring ───────────────────────────────────
+   Official clinical cutoffs (Kroenke et al., 2001; Spitzer et al., 2006).
+─────────────────────────────────────────────────────────────── */
+function phq9SeverityFor(score) {
+  if (score >= 20) return "severe";
+  if (score >= 15) return "moderately_severe";
+  if (score >= 10) return "moderate";
+  if (score >= 5)  return "mild";
+  return "minimal";
+}
+
+function gad7SeverityFor(score) {
+  if (score >= 15) return "severe";
+  if (score >= 10) return "moderate";
+  if (score >= 5)  return "mild";
+  return "minimal";
+}
+
+// Maps a clinical severity band to the app's own LOW/MEDIUM/HIGH risk tier,
+// which drives appointment scheduling and counselor triage.
+const RISK_TIER = {
+  minimal: "LOW", mild: "LOW",
+  moderate: "MEDIUM",
+  moderately_severe: "HIGH", severe: "HIGH",
+};
+
+// A slot must not run into the 12–1 PM lunch break or past the 4 PM close.
+function slotFitsOfficeHours(slot, durationMinutes) {
+  const startMin = slot.h * 60 + slot.m;
+  const endMin   = startMin + durationMinutes;
+  const LUNCH_START = 12 * 60, CLOSE = 16 * 60;
+  return startMin < LUNCH_START ? endMin <= LUNCH_START : endMin <= CLOSE;
+}
+
+// Does [candidateStart, candidateStart+durationMinutes) overlap any existing
+// active appointment that day? Each uses its OWN stored duration (older
+// records default to 30 min).
+async function hasOverlap(candidateStart, durationMinutes) {
+  const dayStart = new Date(candidateStart); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd   = new Date(candidateStart); dayEnd.setHours(23, 59, 59, 999);
+
+  const existing = await Appointment.find({
+    scheduleDate: { $gte: dayStart, $lte: dayEnd },
+    status: { $in: ['PENDING', 'ONGOING'] },
+  });
+  const candidateEnd = new Date(candidateStart.getTime() + durationMinutes * 60000);
+
+  return existing.some(a => {
+    const aStart = new Date(a.scheduleDate);
+    const aEnd   = new Date(aStart.getTime() + effectiveDuration(a) * 60000);
+    return candidateStart < aEnd && aStart < candidateEnd;
+  });
+}
+
+async function findNextAvailableSlot(daysFromNow, durationMinutes = 30) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -32,26 +111,13 @@ async function findNextAvailableSlot(daysFromNow) {
   candidate = skipToWeekday(candidate);
 
   for (let attempt = 0; attempt < 30; attempt++) {
-    const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
-
-    const existing = await Appointment.find({
-      scheduleDate: { $gte: dayStart, $lte: dayEnd },
-      status: { $in: ['PENDING', 'ONGOING'] },
-    });
-
-    const booked = new Set(
-      existing.map(a => {
-        const d = new Date(a.scheduleDate);
-        return `${d.getHours()}:${d.getMinutes()}`;
-      })
-    );
-
-    for (const slot of TIME_SLOTS) {
-      if (!booked.has(`${slot.h}:${slot.m}`)) {
+    const dayFull = (await countActiveApptsOnDay(candidate)) >= MAX_APPTS_PER_DAY;
+    if (!dayFull) {
+      for (const slot of TIME_SLOTS) {
+        if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
         const result = new Date(candidate);
         result.setHours(slot.h, slot.m, 0, 0);
-        return result;
+        if (!(await hasOverlap(result, durationMinutes))) return result;
       }
     }
 
@@ -67,8 +133,25 @@ async function findNextAvailableSlot(daysFromNow) {
   return fallbackDay;
 }
 
+// Find the next open slot LATER TODAY only (no rollover to another day).
+// Returns null if today is a weekend, already past office hours, or fully booked.
+async function findNextAvailableSlotToday(durationMinutes = 30) {
+  const now = new Date();
+  if (now.getDay() === 0) return null; // Sunday, closed
+  if ((await countActiveApptsOnDay(now)) >= MAX_APPTS_PER_DAY) return null; // day fully booked
+
+  for (const slot of TIME_SLOTS) {
+    if (!slotFitsOfficeHours(slot, durationMinutes)) continue;
+    const slotDate = new Date(now);
+    slotDate.setHours(slot.h, slot.m, 0, 0);
+    if (slotDate <= now) continue; // slot already passed
+    if (!(await hasOverlap(slotDate, durationMinutes))) return slotDate;
+  }
+  return null;
+}
+
 // 🔥 AUTO APPOINTMENT FUNCTION
-const createAutoAppointment = async (studentId, severity, source) => {
+const createAutoAppointment = async (studentId, severity, source, counselorChoice) => {
   try {
     // 🚫 Prevent duplicate active appointments
     const existing = await Appointment.findOne({
@@ -77,19 +160,43 @@ const createAutoAppointment = async (studentId, severity, source) => {
     });
 
     if (existing) {
-      console.log("ℹ️ Active appointment already exists, using existing");
+      // A retake can land a different severity than the one that originally
+      // booked this appointment (e.g. LOW -> HIGH a month later) — keep the
+      // existing slot, but sync severity/duration so risk tier shown on the
+      // admin side always reflects the LATEST assessment, not a stale one.
+      if (existing.severity !== severity) {
+        existing.severity = severity;
+        existing.durationMinutes = durationFor(severity);
+        await existing.save();
+        console.log(`ℹ️ Active appointment already exists — synced severity to ${severity}`);
+      } else {
+        console.log("ℹ️ Active appointment already exists, using existing");
+      }
       return existing;
     }
 
-    // Days out by severity: HIGH=1, MEDIUM=3
-    const daysOut = severity === "HIGH" ? 1 : 3;
-    const scheduleDate = await findNextAvailableSlot(daysOut);
+    const durationMinutes = durationFor(severity);
+    let scheduleDate;
+
+    if (severity === "HIGH") {
+      // Urgent — book the soonest possible slot, today if one is still open,
+      // rather than automatically skipping to tomorrow.
+      scheduleDate = await findNextAvailableSlotToday(durationMinutes);
+      if (!scheduleDate) {
+        scheduleDate = await findNextAvailableSlot(1, durationMinutes);
+      }
+    } else {
+      // MEDIUM — not urgent enough to need a same-day slot; a day or two out.
+      scheduleDate = await findNextAvailableSlot(1, durationMinutes);
+    }
 
     const appointment = await Appointment.create({
       studentId,
       severity,
       assignedTo: "Guidance Counselor",
+      counselorName: Appointment.resolveCounselorName(counselorChoice),
       scheduleDate,
+      durationMinutes,
       status: "PENDING",
       source
     });
@@ -111,34 +218,70 @@ exports.createAssessment = async (req, res) => {
     console.log("🔥 createAssessment HIT");
 
     const studentId = req.user.id;
-    const { answers } = req.body;
+    const { phq9Answers, gad7Answers, counselorChoice } = req.body || {};
 
-    if (!answers || !Array.isArray(answers)) {
+    if (!Array.isArray(phq9Answers) || phq9Answers.length !== 9 ||
+        !Array.isArray(gad7Answers) || gad7Answers.length !== 7) {
       return res.json({
         success: false,
-        message: "Answers are required"
+        message: "A complete PHQ-9 (9 items) and GAD-7 (7 items) response is required"
       });
     }
 
-    // ✅ CALCULATE SCORE
-    const score = answers.reduce((sum, val) => sum + Number(val), 0);
+    // ✅ CALCULATE SCORES (each instrument scored on its own official scale)
+    const phq9Score = phq9Answers.reduce((sum, val) => sum + Number(val), 0);
+    const gad7Score = gad7Answers.reduce((sum, val) => sum + Number(val), 0);
+    const score = phq9Score + gad7Score;
+    const answers = [...phq9Answers, ...gad7Answers];
 
-    // ✅ DETERMINE SEVERITY
+    const phq9Severity = phq9SeverityFor(phq9Score);
+    const gad7Severity = gad7SeverityFor(gad7Score);
+
+    // ✅ DETERMINE OVERALL SEVERITY — the worse of the two instruments.
     let severity = "LOW";
-    if (score >= 10) severity = "HIGH";
-    else if (score >= 5) severity = "MEDIUM";
+    if (RISK_TIER[phq9Severity] === "HIGH" || RISK_TIER[gad7Severity] === "HIGH") {
+      severity = "HIGH";
+    } else if (RISK_TIER[phq9Severity] === "MEDIUM" || RISK_TIER[gad7Severity] === "MEDIUM") {
+      severity = "MEDIUM";
+    }
+
+    // PHQ-9 item 9 screens for thoughts of self-harm — any non-zero answer
+    // is escalated to HIGH regardless of the totals, per standard practice.
+    if (Number(phq9Answers[8]) > 0) severity = "HIGH";
 
     // 🔥 CREATE APPOINTMENT FIRST (IMPORTANT FIX)
     let appointment = null;
 
+    // HIGH/MEDIUM always get scheduled; LOW gets scheduled only if a slot is available
     if (severity === "HIGH" || severity === "MEDIUM") {
       console.log(`🔥 ${severity} severity detected`);
-
-      appointment = await createAutoAppointment(
+      appointment = await createAutoAppointment(studentId, severity, "assessment", counselorChoice);
+    } else if (severity === "LOW") {
+      const existingAppt = await Appointment.findOne({
         studentId,
-        severity,
-        "assessment"
-      );
+        status: { $in: ["PENDING", "ONGOING"] }
+      });
+      if (!existingAppt) {
+        // Schedule LOW risk 2 days out (next available slot from then)
+        const daysOut = 2;
+        const durationMinutes = durationFor("LOW");
+        const slotDate = await findNextAvailableSlot(daysOut, durationMinutes);
+        // Only schedule if it falls within a reasonable window (≤ 14 days)
+        const daysDiff = Math.ceil((slotDate - new Date()) / (1000 * 60 * 60 * 24));
+        if (daysDiff <= 14) {
+          appointment = await Appointment.create({
+            studentId,
+            severity: "LOW",
+            assignedTo: "Student Assistant",
+            counselorName: Appointment.resolveCounselorName(counselorChoice),
+            scheduleDate: slotDate,
+            durationMinutes,
+            status: "PENDING",
+            source: "assessment"
+          });
+          console.log("✅ LOW-risk appointment created (vacant slot):", appointment);
+        }
+      }
     }
 
     // 🔥 CREATE ASSESSMENT WITH APPOINTMENT LINK
@@ -147,6 +290,12 @@ exports.createAssessment = async (req, res) => {
       answers,
       score,
       severity,
+      phq9Answers,
+      phq9Score,
+      phq9Severity,
+      gad7Answers,
+      gad7Score,
+      gad7Severity,
       appointmentId: appointment ? appointment._id : null
     });
 
@@ -155,6 +304,10 @@ exports.createAssessment = async (req, res) => {
       message: "Assessment submitted",
       score,
       severity,
+      phq9Score,
+      phq9Severity,
+      gad7Score,
+      gad7Severity,
       assessment: newAssessment,
       appointment // 🔥 ALWAYS returned now (even if existing)
     });
@@ -169,16 +322,23 @@ exports.createAssessment = async (req, res) => {
 };
 
 
-// 🔍 CHECK IF ASSESSMENT EXISTS (UNCHANGED)
+// 🔍 CHECK IF ASSESSMENT EXISTS / IS DUE FOR MONTHLY RETAKE
 exports.checkAssessment = async (req, res) => {
   try {
     const { studentId } = req.params;
 
-    const existing = await Assessment.findOne({ studentId });
+    const latest = await Assessment.findOne({ studentId }).sort({ createdAt: -1 });
+
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const dueForReassessment = latest
+      ? (Date.now() - new Date(latest.createdAt).getTime()) >= THIRTY_DAYS_MS
+      : false;
 
     res.json({
       success: true,
-      hasAssessment: !!existing
+      hasAssessment: !!latest,
+      lastAssessmentDate: latest ? latest.createdAt : null,
+      dueForReassessment
     });
 
   } catch (error) {

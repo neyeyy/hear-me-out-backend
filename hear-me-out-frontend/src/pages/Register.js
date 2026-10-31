@@ -3,21 +3,30 @@ import { useNavigate } from "react-router-dom";
 import API from "../services/api";
 
 export default function Register() {
-  const [name, setName]         = useState("");
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [focused, setFocused]   = useState(null);
-  const [error,   setError]     = useState("");
+  const [name,      setName]      = useState("");
+  const [email,     setEmail]     = useState("");
+  const [password,  setPassword]  = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [yearLevel, setYearLevel] = useState("");
+  const [showPass,  setShowPass]  = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [focused,   setFocused]   = useState(null);
+  const [error,     setError]     = useState("");
   const navigate = useNavigate();
 
+  // Digits only, capped at 11 — matches the school's ID format (e.g. 02000351322).
+  const handleStudentIdChange = (v) => setStudentId(v.replace(/\D/g, "").slice(0, 11));
+
   const handleRegister = async () => {
-    if (!name || !email || !password) { setError("Please fill in all fields."); return; }
+    if (!name || !email || !password || !studentId) { setError("Please fill in all fields."); return; }
+    if (!/^0\d{10}$/.test(studentId)) {
+      setError("Student ID must be 11 digits and start with 0 (e.g. 02000351322).");
+      return;
+    }
     setError("");
     try {
       setLoading(true);
-      const res = await API.post("/auth/register", { name, email, password });
+      const res = await API.post("/auth/register", { name, email, password, yearLevel, studentId });
       if (res.data.success) {
         navigate("/");
       } else {
@@ -29,9 +38,10 @@ export default function Register() {
   };
 
   const fields = [
-    { id:"name",  label:"Full name",      icon:"👤", type:"text",     ph:"Your full name",       val:name,     set:setName },
-    { id:"email", label:"Email address",  icon:"✉️", type:"email",    ph:"you@university.edu",   val:email,    set:setEmail },
-    { id:"pw",    label:"Password",       icon:"🔒", type:"password", ph:"Create a password",    val:password, set:setPassword },
+    { id:"name",  label:"Full name",      icon:"👤", type:"text",     ph:"Your full name",       val:name,      set:setName },
+    { id:"email", label:"Email address",  icon:"✉️", type:"email",    ph:"you@university.edu",   val:email,     set:setEmail },
+    { id:"sid",   label:"Student ID",     icon:"🪪", type:"text",     ph:"02000351322",           val:studentId, set:handleStudentIdChange },
+    { id:"pw",    label:"Password",       icon:"🔒", type:"password", ph:"Create a password",    val:password,  set:setPassword },
   ];
 
   return (
@@ -60,6 +70,8 @@ export default function Register() {
                   onFocus={() => setFocused(f.id)}
                   onBlur={() => setFocused(null)}
                   autoCapitalize={f.id === "name" ? "words" : "none"}
+                  inputMode={f.id === "sid" ? "numeric" : undefined}
+                  maxLength={f.id === "sid" ? 11 : undefined}
                   style={{ ...s.input, flex: 1 }}
                 />
                 {f.id === "pw" && (
@@ -70,6 +82,29 @@ export default function Register() {
               </div>
             </div>
           ))}
+
+          {/* Year level dropdown */}
+          <div style={s.group}>
+            <label style={s.label}>Year Level</label>
+            <div style={{ ...s.inputRow, borderColor: focused === "yr" ? "#38C9B8" : "rgba(56,201,184,0.2)" }}>
+              <span style={s.icon}>🎓</span>
+              <select
+                value={yearLevel}
+                onChange={e => setYearLevel(e.target.value)}
+                onFocus={() => setFocused("yr")}
+                onBlur={() => setFocused(null)}
+                style={{ ...s.input, flex: 1, cursor: "pointer" }}
+              >
+                <option value="">Select year level</option>
+                <option value="Grade 11">Grade 11</option>
+                <option value="Grade 12">Grade 12</option>
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
+              </select>
+            </div>
+          </div>
 
           {error && <div style={{ color:"#F87171", fontSize:"13px", fontWeight:600, textAlign:"center", marginTop:"-6px" }}>{error}</div>}
 

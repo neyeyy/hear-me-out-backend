@@ -6,18 +6,28 @@ const crypto = require('crypto');
 // REGISTER
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password)
+    const { name, email, password, yearLevel, studentId } = req.body || {};
+    if (!name || !email || !password || !studentId)
       return res.json({ success: false, message: "All fields are required" });
     if (password.length < 6)
       return res.json({ success: false, message: "Password must be at least 6 characters" });
+    // Student ID: exactly 11 digits, starting with 0 (e.g. 02000351322)
+    if (!/^0\d{10}$/.test(studentId.trim()))
+      return res.json({ success: false, message: "Student ID must be 11 digits and start with 0 (e.g. 02000351322)" });
 
     const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
     if (existingUser)
       return res.json({ success: false, message: "Email already registered" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    await User.create({ name: name.trim(), email: email.toLowerCase().trim(), password: hashedPassword });
+    const validYearLevels = ['Grade 11', 'Grade 12', '1st Year', '2nd Year', '3rd Year', '4th Year'];
+    await User.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password: hashedPassword,
+      yearLevel: validYearLevels.includes(yearLevel) ? yearLevel : null,
+      studentId: studentId.trim(),
+    });
 
     res.json({ success: true, message: "Registration successful" });
   } catch (error) {
@@ -28,7 +38,7 @@ exports.register = async (req, res) => {
 // LOGIN
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
     if (!email || !password)
       return res.json({ success: false, message: "Email and password are required" });
 
@@ -44,7 +54,7 @@ exports.login = async (req, res) => {
       success: true,
       message: "Login successful",
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, yearLevel: user.yearLevel || null, studentId: user.studentId || null },
     });
   } catch (error) {
     res.json({ success: false, message: error.message });
@@ -54,7 +64,7 @@ exports.login = async (req, res) => {
 // CHANGE PASSWORD
 exports.changePassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword } = req.body || {};
     const userId = req.user.id;
 
     if (!currentPassword || !newPassword)
@@ -80,7 +90,7 @@ exports.changePassword = async (req, res) => {
 // FORGOT PASSWORD — generates a 6-char recovery code
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body || {};
     if (!email) return res.json({ success: false, message: "Email is required" });
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
@@ -108,7 +118,7 @@ exports.forgotPassword = async (req, res) => {
 // RESET PASSWORD — validates code and sets new password
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
+    const { email, code, newPassword } = req.body || {};
 
     if (!email || !code || !newPassword)
       return res.json({ success: false, message: "All fields are required" });

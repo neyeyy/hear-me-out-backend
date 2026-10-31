@@ -1,27 +1,31 @@
 {
   "expo": {
     "name": "Hear Me Out",
-    "slug": "hear-me-out",
+    "slug": "your-app-slug",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#6C63FF"
-    },
     "android": {
-      "package": "com.hearmeout.app"
+      "package": "com.danice_cabual.hearmeout"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "322d450a-3420-4239-92ef-309d9575efb6"
+      }
     },
     "ios": {
-      "bundleIdentifier": "com.hearmeout.app",
+      "bundleIdentifier": "com.danicecabual.hearmeout",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
-    "extra": {
-      "eas": {
-        "projectId": "9c2cf4f7-a085-4237-a362-4d3cdaf07089"
-      }
-    }
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/322d450a-3420-4239-92ef-309d9575efb6"
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

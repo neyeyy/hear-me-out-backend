@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet, Animated,
   ActivityIndicator, Modal, ScrollView, Platform,
 } from "react-native";
 import API from "../services/api";
+import useDragToClose from "../hooks/useDragToClose";
 
 const MOODS = {
   HAPPY:    { color: "#4ECDC4", emoji: "😊", label: "Happy" },
@@ -12,7 +13,7 @@ const MOODS = {
   ANXIOUS:  { color: "#F87171", emoji: "😰", label: "Anxious" },
 };
 
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December",
@@ -37,6 +38,7 @@ export default function MoodCalendar() {
   const [allMoods,     setAllMoods]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [selectedDay,  setSelectedDay]  = useState(null); // { day, entries[] }
+  const dayDrag = useDragToClose(() => setSelectedDay(null), !!selectedDay);
 
   useEffect(() => {
     API.get("/moods")
@@ -76,7 +78,7 @@ export default function MoodCalendar() {
 
   const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const daysInMonth    = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDayOffset = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7;
+  const firstDayOffset = new Date(viewYear, viewMonth, 1).getDay(); // Sunday-first, matching the schedule calendar
   const days           = moodMap();
   const trackedCount   = Object.keys(days).length;
 
@@ -86,6 +88,11 @@ export default function MoodCalendar() {
       ? { blank: true, key: `b${i}` }
       : { blank: false, key: `d${i}`, day: i - firstDayOffset + 1 }
   );
+  // Explicit 7-cell week rows — flexWrap on a repeating 100/7% width can
+  // drift from pixel rounding and silently break the row after 6 cells,
+  // shifting every date after it onto the wrong weekday.
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
   if (loading) {
     return (
@@ -131,47 +138,51 @@ export default function MoodCalendar() {
         ))}
       </View>
 
-      {/* Calendar grid */}
-      <View style={s.grid}>
-        {cells.map(cell => {
-          if (cell.blank) return <View key={cell.key} style={s.cellOuter} />;
-          const { day } = cell;
-          const entries = days[day] || [];
-          // Show the most recent mood of the day on the cell
-          const latestMood = entries.length > 0 ? entries[entries.length - 1].mood : null;
-          const m       = latestMood ? MOODS[latestMood] : null;
-          const isToday = isCurrentMonth && day === today.getDate();
-          const bg      = m ? m.color
-            : isToday ? "rgba(91,107,216,0.35)"
-            : "rgba(255,255,255,0.06)";
+      {/* Calendar grid — one explicit row per week */}
+      <View style={{ marginBottom: 14 }}>
+        {weeks.map((week, wi) => (
+          <View key={wi} style={s.gridRow}>
+            {week.map(cell => {
+              if (cell.blank) return <View key={cell.key} style={s.cellOuter} />;
+              const { day } = cell;
+              const entries = days[day] || [];
+              // Show the most recent mood of the day on the cell
+              const latestMood = entries.length > 0 ? entries[entries.length - 1].mood : null;
+              const m       = latestMood ? MOODS[latestMood] : null;
+              const isToday = isCurrentMonth && day === today.getDate();
+              const bg      = m ? m.color
+                : isToday ? "rgba(91,107,216,0.35)"
+                : "rgba(255,255,255,0.06)";
 
-          return (
-            <View key={cell.key} style={s.cellOuter}>
-              <TouchableOpacity
-                activeOpacity={entries.length > 0 ? 0.7 : 1}
-                onPress={() => entries.length > 0 && setSelectedDay({ day, entries })}
-                style={[
-                  s.cellInner,
-                  { backgroundColor: bg },
-                  isToday && !m && s.todayOutline,
-                ]}
-              >
-                {entries.length > 1 && (
-                  <View style={s.multiDot} />
-                )}
-                {m ? (
-                  <Text style={s.cellEmoji}>{m.emoji}</Text>
-                ) : (
-                  <Text style={[s.cellDay, {
-                    color: isToday ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)",
-                  }]}>
-                    {day}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          );
-        })}
+              return (
+                <View key={cell.key} style={s.cellOuter}>
+                  <TouchableOpacity
+                    activeOpacity={entries.length > 0 ? 0.7 : 1}
+                    onPress={() => entries.length > 0 && setSelectedDay({ day, entries })}
+                    style={[
+                      s.cellInner,
+                      { backgroundColor: bg },
+                      isToday && !m && s.todayOutline,
+                    ]}
+                  >
+                    {entries.length > 1 && (
+                      <View style={s.multiDot} />
+                    )}
+                    {m ? (
+                      <Text style={s.cellEmoji}>{m.emoji}</Text>
+                    ) : (
+                      <Text style={[s.cellDay, {
+                        color: isToday ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)",
+                      }]}>
+                        {day}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        ))}
       </View>
 
       {/* Legend */}
@@ -196,8 +207,10 @@ export default function MoodCalendar() {
           activeOpacity={1}
           onPress={() => setSelectedDay(null)}
         />
-        <View style={s.sheet}>
-          <View style={s.sheetHandle} />
+        <Animated.View style={[s.sheet, { transform: [{ translateY: dayDrag.translateY }] }]}>
+          <View style={s.handleTouchArea} {...dayDrag.panHandlers}>
+            <View style={s.sheetHandle} />
+          </View>
 
           {selectedDay && (
             <>
@@ -237,7 +250,7 @@ export default function MoodCalendar() {
               </ScrollView>
             </>
           )}
-        </View>
+        </Animated.View>
       </Modal>
     </View>
   );
@@ -336,18 +349,18 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
 
-  grid: {
+  gridRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 14,
   },
+  // No padding here — padding on top of a percentage width can push 7
+  // columns just past 100% and silently wrap the row after 6 cells instead.
   cellOuter: {
     width: `${100 / 7}%`,
     aspectRatio: 1,
-    padding: 2.5,
   },
   cellInner: {
     flex: 1,
+    margin: 2.5,
     borderRadius: 7,
     justifyContent: "center",
     alignItems: "center",
@@ -390,7 +403,9 @@ const s = StyleSheet.create({
   /* ── Bottom sheet modal ── */
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    // No dark dimming — with the drag-to-dismiss handle, a static overlay
+    // looked disconnected from the sheet sliding away underneath it.
+    backgroundColor: "transparent",
   },
   sheet: {
     backgroundColor: "#1E2037",
@@ -402,13 +417,16 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
+  handleTouchArea: {
+    alignItems: "center",
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
   sheetHandle: {
     width: 40,
     height: 4,
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.2)",
-    alignSelf: "center",
-    marginBottom: 16,
   },
   sheetDate: {
     fontSize: 16,

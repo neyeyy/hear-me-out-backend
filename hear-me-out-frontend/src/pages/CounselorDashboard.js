@@ -4,12 +4,21 @@ import { io } from "socket.io-client";
 import API from "../services/api";
 import logo from "../logo.png";
 
-const socket = io("https://hear-me-out-backend.up.railway.app/api");
+const socket = io(process.env.REACT_APP_SOCKET_URL || "https://hear-me-out-backend.onrender.com", {
+  transports: ["websocket", "polling"],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+});
 
 /* ─── constants ──────────────────────────────────────────── */
-const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8" };
-const SEV_BG    = { HIGH: "#FFF0EE", MEDIUM: "#FFF8EC", LOW: "#E6FAF7" };
+const SEV_COLOR = { HIGH: "#F87171", MEDIUM: "#F9A72B", LOW: "#38C9B8", MISSED: "#9CA3AF" };
+const SEV_BG    = { HIGH: "#FFF0EE", MEDIUM: "#FFF8EC", LOW: "#E6FAF7", MISSED: "#F1F2F6" };
+const SESSION_MINUTES = { HIGH: 60, MEDIUM: 60, LOW: 30 };
 const SEV_ORDER = { HIGH: 1, MEDIUM: 2, LOW: 3 };
+// "Pending" reads as "Upcoming" everywhere it's shown — matches the mobile app's wording.
+const STATUS_LABEL = { PENDING: "Upcoming" };
+const statusLabel = (status) => STATUS_LABEL[status] || status;
 
 const MOOD_META = {
   HAPPY:    { emoji: "😊", color: "#4ECDC4" },
@@ -42,6 +51,7 @@ const SCHED_SLOTS = [
   { label: "3:30 PM",  value: "15:30" },
 ];
 
+// Mon–Sat (6 days) — Saturday has a counselor in, Sunday is closed.
 function getWeekDates(offset) {
   const today = new Date();
   const dow = today.getDay();
@@ -49,7 +59,7 @@ function getWeekDates(offset) {
   const monday = new Date(today);
   monday.setDate(today.getDate() + diffToMon + offset * 7);
   monday.setHours(0, 0, 0, 0);
-  return Array.from({ length: 5 }, (_, i) => {
+  return Array.from({ length: 6 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d;
@@ -64,12 +74,17 @@ export default function CounselorDashboard() {
   const [apptList,       setApptList]     = useState([]);
   const [analytics,      setAnalytics]    = useState(null);
   const [search,         setSearch]       = useState("");
-  const [sevFilter,      setSevFilter]    = useState("ALL");
+  const [sevFilter,      setSevFilter]    = useState("HIGH");
   const [loading,        setLoading]      = useState(true);
   const [confirmCompleteId, setConfirmCompleteId] = useState(null);
   // schedule tab
   const [weekOffset,     setWeekOffset]   = useState(0);
   const [ovWeekOffset,   setOvWeekOffset] = useState(0);
+  // overview stats filter — "all" | "day" | "month" | "year"
+  const [ovFilterMode,   setOvFilterMode]  = useState("all");
+  const [ovFilterDay,    setOvFilterDay]   = useState(() => new Date().toISOString().slice(0, 10));
+  const [ovFilterMonth,  setOvFilterMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [ovFilterYear,   setOvFilterYear]  = useState(() => String(new Date().getFullYear()));
   const [rescheduleAppt, setRescheduleAppt] = useState(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("09:00");
@@ -85,23 +100,74 @@ export default function CounselorDashboard() {
   const [chatSearch,     setChatSearch]     = useState("");
   // notifications
   const [notifOpen,      setNotifOpen]      = useState(false);
-  const [notifs,         setNotifs]         = useState([]);
   const [notifFilter,    setNotifFilter]    = useState("all");
+  // The panel itself is computed LIVE from current appointment/conversation
+  // state (see below) so a reload never makes a still-relevant notification
+  // disappear — this just remembers which specific ones were dismissed, so
+  // dismissing one sticks instead of it reappearing the moment the list
+  // recomputes.
+  const [dismissedNotifIds, setDismissedNotifIds] = useState(
+    () => new Set(JSON.parse(localStorage.getItem("dismissedNotifIds") || "[]"))
+  );
+  const [toast,          setToast]          = useState(null);
+  const toastTimerRef    = useRef(null);
   const notifSeenRef     = useRef(new Set(JSON.parse(localStorage.getItem("notifSeen") || "[]")));
+  // Persisted (not just in-memory) so a page reload doesn't forget which
+  // unread bumps were already surfaced as a notification and re-pop them.
+  const chatNotifSeenRef = useRef(JSON.parse(localStorage.getItem("chatNotifSeen") || "{}"));
   const chatEndRef       = useRef(null);
   const chatRoomRef      = useRef(null);
   const schedInitRef     = useRef(false);
   const ovInitRef        = useRef(false);
+  const ovFilterMountRef = useRef(false);
   const chatTypingTimer  = useRef(null);
   const navigate = useNavigate();
 
   const counselorName = localStorage.getItem("name") || "Counselor";
+
+  // Visiting /admin directly (bookmark, typed URL) without a valid counselor
+  // session used to crash the page instead of sending the visitor to log in.
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const role = localStorage.getItem("role");
+    if (!token || role !== "counselor") {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
+
+  // Real online/offline presence — registers this counselor as online, and
+  // tracks everyone else's (students') live status for the chat header.
+  const [onlineUsers, setOnlineUsers] = useState([]); // [{ userId, role }]
+  useEffect(() => {
+    const counselorId = localStorage.getItem("userId");
+    if (counselorId) socket.emit("identify", { userId: counselorId, role: "counselor" });
+    socket.emit("getOnlineUsers");
+
+    const onOnlineList = (list) => setOnlineUsers(Array.isArray(list) ? list : []);
+    socket.on("onlineUsersList", onOnlineList);
+    socket.on("connect", () => {
+      if (counselorId) socket.emit("identify", { userId: counselorId, role: "counselor" });
+      socket.emit("getOnlineUsers");
+    });
+    return () => socket.off("onlineUsersList", onOnlineList);
+  }, []); // eslint-disable-line
+
+  const isStudentOnline = (studentId) =>
+    onlineUsers.some((u) => String(u.userId) === String(studentId) && u.role === "student");
 
   useEffect(() => {
     Promise.all([fetchStudents(), fetchAppointments(), fetchAnalytics()])
       .finally(() => setLoading(false));
     const iv = setInterval(() => { fetchStudents(); fetchAppointments(); }, 15000);
     return () => clearInterval(iv);
+  }, []); // eslint-disable-line
+
+  // Push-driven refresh — appointment created/cancelled/rescheduled/missed
+  // anywhere updates this dashboard immediately instead of waiting on the poll.
+  useEffect(() => {
+    const onAppointmentsChanged = () => fetchAppointments();
+    socket.on("appointmentsChanged", onAppointmentsChanged);
+    return () => socket.off("appointmentsChanged", onAppointmentsChanged);
   }, []); // eslint-disable-line
 
   const fetchStudents = async () => {
@@ -116,21 +182,54 @@ export default function CounselorDashboard() {
       const res = await API.get("/appointments");
       const list = res.data.appointments || [];
       setApptList(list);
+      // Keep each student's MOST RECENT appointment — the list here is sorted by
+      // severity/date for display, not recency, so naively taking "last in array"
+      // per student can surface a stale record (e.g. an old CANCELLED one) instead
+      // of their actual current one (e.g. a newer MISSED appointment).
       const map = {};
       list.forEach(app => {
+        if (!app.studentId) return; // orphaned reference (student account no longer exists)
         const sid = typeof app.studentId === "object" ? app.studentId._id : app.studentId;
-        map[sid] = app;
+        const existing = map[sid];
+        if (!existing || new Date(app.createdAt) > new Date(existing.createdAt)) {
+          map[sid] = app;
+        }
       });
       setAppointments(map);
     } catch (e) { console.log(e); }
   };
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (range) => {
     try {
-      const res = await API.get("/analytics/dashboard");
+      const qs = range
+        ? `?from=${encodeURIComponent(range.start.toISOString())}&to=${encodeURIComponent(range.end.toISOString())}`
+        : "";
+      const res = await API.get(`/analytics/dashboard${qs}`);
       setAnalytics(res.data);
     } catch (e) { console.log(e); }
   };
+
+  // Recompute the Overview's mood breakdown whenever the day/month/year
+  // filter changes — the initial "all time" load is already covered by the
+  // Promise.all on mount, so skip firing this a second time right away.
+  useEffect(() => {
+    if (!ovFilterMountRef.current) { ovFilterMountRef.current = true; return; }
+    fetchAnalytics(ovFilterRange);
+  }, [ovFilterMode, ovFilterDay, ovFilterMonth, ovFilterYear]); // eslint-disable-line
+
+  // Pop a toast in the corner for ~5s, restarting the timer if another arrives
+  const showToast = useCallback((text) => {
+    clearTimeout(toastTimerRef.current);
+    setToast(text);
+    toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  const dismissNotif = (id) => setDismissedNotifIds(prev => {
+    const next = new Set(prev);
+    next.add(id);
+    localStorage.setItem("dismissedNotifIds", JSON.stringify([...next]));
+    return next;
+  });
 
   // Check for new/changed appointments and push to the TOP of the feed
   const checkNotifications = useCallback(() => {
@@ -138,7 +237,7 @@ export default function CounselorDashboard() {
     const incoming = [];
 
     apptList.forEach(a => {
-      if (!a.scheduleDate) return;
+      if (!a.scheduleDate || !a.studentId) return; // skip orphaned refs (deleted student)
       // Key = id + status so a status change (e.g. PENDING→ONGOING) re-notifies
       const key = `${a._id}_${a.status}`;
       if (notifSeenRef.current.has(key)) return;
@@ -148,6 +247,17 @@ export default function CounselorDashboard() {
       const apptTime = new Date(a.scheduleDate);
       const diffMin  = Math.round((apptTime - now) / 60000);
       const name     = typeof a.studentId === "object" ? (a.studentId.name || "Student") : "Student";
+      const roomId   = typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+
+      if (a.status === "MISSED") {
+        incoming.push({ id: key, kind: "missed", appt: a, name, roomId, addedAt: new Date() });
+        return;
+      }
+
+      if (a.status === "CANCELLED") {
+        incoming.push({ id: key, kind: "cancelled", appt: a, name, roomId, reason: a.cancelReason, addedAt: new Date() });
+        return;
+      }
 
       let type = "scheduled";
       if (a.status === "ONGOING") type = "ongoing";
@@ -159,10 +269,15 @@ export default function CounselorDashboard() {
     });
 
     if (incoming.length > 0) {
-      // Newest at the top — prepend incoming (sorted newest-first within batch)
-      setNotifs(prev => [...incoming.reverse(), ...prev]);
+      // The panel itself reads live appointment state (see liveAllNotifs
+      // etc. below), so this only needs to drive the pop-up toast.
+      if (incoming.length === 1) {
+        showToast(incoming[0]);
+      } else {
+        showToast({ kind: "summary", count: incoming.length });
+      }
     }
-  }, [apptList]);
+  }, [apptList, showToast]);
 
   useEffect(() => {
     checkNotifications();
@@ -173,9 +288,18 @@ export default function CounselorDashboard() {
   const loadConversations = useCallback(async () => {
     try {
       const res = await API.get("/messages/conversations");
-      setConversations(res.data || []);
+      setConversations(Array.isArray(res.data) ? res.data : []);
     } catch (e) { console.log(e); }
   }, []);
+
+  // Push-driven refresh — a student message anywhere refreshes the
+  // conversation list immediately (a room-scoped socket event alone won't
+  // reach us here unless that chat is already open).
+  useEffect(() => {
+    const onNewMessageAlert = () => loadConversations();
+    socket.on("newMessageAlert", onNewMessageAlert);
+    return () => socket.off("newMessageAlert", onNewMessageAlert);
+  }, [loadConversations]);
 
   // Auto-jump to the week of the nearest appointment (past OR future)
   const jumpToNearestAppt = (setOffset) => {
@@ -210,13 +334,39 @@ export default function CounselorDashboard() {
     jumpToNearestAppt(setOvWeekOffset);
   }, [tab, apptList]); // eslint-disable-line
 
-  // Refresh conversations every 15 s while chat tab is open
+  // Load conversations globally for unread badge + chat notifications
   useEffect(() => {
-    if (tab !== "chat") return;
     loadConversations();
-    const iv = setInterval(loadConversations, 15000);
+    const iv = setInterval(loadConversations, tab === "chat" ? 15000 : 30000);
     return () => clearInterval(iv);
   }, [tab, loadConversations]);
+
+  // Detect new unread chat messages and push to notifications panel.
+  // Skips system-authored notices (missed/vacancy messages) — those already
+  // get their own correctly-labeled "missed"/"cancelled" notification cards,
+  // so surfacing them again here as if the student just messaged is wrong.
+  const checkChatNotifications = useCallback(() => {
+    let changed = false;
+    conversations.forEach(conv => {
+      const prevSeen = chatNotifSeenRef.current[conv.roomId] || 0;
+      const isNewFromStudent = conv.unread > prevSeen && conv.lastSenderId && conv.lastSenderId !== "system";
+      if (isNewFromStudent) {
+        const key = `chat_${conv.roomId}_${conv.lastAt}`;
+        // addedAt reflects when the message actually arrived (conv.lastAt),
+        // not when this poll happened to notice it, so "X ago" stays accurate.
+        const chatNotif = { id: key, kind: "chat", name: conv.studentName, roomId: conv.roomId,
+          unreadCount: conv.unread, lastMessage: conv.lastMessage, addedAt: conv.lastAt ? new Date(conv.lastAt) : new Date() };
+        showToast(chatNotif);
+      }
+      if (conv.unread !== prevSeen) {
+        chatNotifSeenRef.current[conv.roomId] = conv.unread;
+        changed = true;
+      }
+    });
+    if (changed) localStorage.setItem("chatNotifSeen", JSON.stringify(chatNotifSeenRef.current));
+  }, [conversations, showToast]);
+
+  useEffect(() => { checkChatNotifications(); }, [checkChatNotifications]);
 
   // Keep chatRoomRef in sync
   useEffect(() => { chatRoomRef.current = chatRoom; }, [chatRoom]);
@@ -231,6 +381,9 @@ export default function CounselorDashboard() {
     if (!chatRoom) return;
     const counselorId = localStorage.getItem("userId");
     socket.emit("joinRoom", chatRoom);
+
+    const onReconnect = () => socket.emit("joinRoom", String(chatRoomRef.current));
+    socket.on("connect", onReconnect);
 
     const onLoad = (data) => {
       setChatMessages(data);
@@ -261,6 +414,7 @@ export default function CounselorDashboard() {
     socket.on("stopTyping",     onStopType);
 
     return () => {
+      socket.off("connect",        onReconnect);
       socket.off("loadMessages",   onLoad);
       socket.off("receiveMessage", onReceive);
       socket.off("messagesSeen",   onSeen);
@@ -270,7 +424,6 @@ export default function CounselorDashboard() {
   }, [chatRoom, loadConversations]);
 
   const handleComplete = async (appointmentId) => {
-
     try {
       await API.patch(`/appointments/${appointmentId}`, { status: "DONE" });
       fetchAppointments();
@@ -286,6 +439,8 @@ export default function CounselorDashboard() {
   };
 
   const selectConversation = (conv) => {
+    chatNotifSeenRef.current[conv.roomId] = 0;
+    localStorage.setItem("chatNotifSeen", JSON.stringify(chatNotifSeenRef.current));
     setChatRoom(conv.roomId);
     setChatStudent({ _id: conv.roomId, name: conv.studentName, email: conv.studentEmail });
     setChatMessages([]);
@@ -313,12 +468,29 @@ export default function CounselorDashboard() {
     }, 1000);
   };
 
+  // Shows just the time for today's messages; once a message is over a day
+  // old, the date is shown beside the time instead of the time alone.
   const chatFormatTime = (ts) => {
     if (!ts) return "";
-    const d = new Date(ts); const now = new Date();
-    if (d.toDateString() === now.toDateString())
-      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const d = new Date(ts);
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === new Date().toDateString()) return time;
+    const date = d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return `${date} · ${time}`;
+  };
+
+  const formatRelativeTime = (ts) => {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    // Over a day old — show the date beside the time instead of a vague "Xd ago".
+    const date = d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `${date} · ${time}`;
   };
 
   const openReschedule = (appt) => {
@@ -336,7 +508,7 @@ export default function CounselorDashboard() {
   const handleReschedule = async () => {
     if (!rescheduleDate || !rescheduleTime) return;
     const dow = new Date(rescheduleDate + "T00:00:00").getDay();
-    if (dow === 0 || dow === 6) { setRescheduleErr("Please select a weekday (Mon–Fri)."); return; }
+    if (dow === 0) { setRescheduleErr("Please select Monday–Saturday."); return; }
     setRescheduleErr("");
     try {
       setRescheduling(true);
@@ -351,11 +523,13 @@ export default function CounselorDashboard() {
   };
 
   const handleLogout = () => {
+    socket.emit("unidentify");
     ["token","role","userId","name","email"].forEach(k => localStorage.removeItem(k));
     navigate("/");
   };
 
   /* ── derived counts ── */
+  const totalUnread = conversations.reduce((sum, c) => sum + (c.unread || 0), 0);
   const total    = students.length;
   const high     = students.filter(s => s.severity === "HIGH").length;
   const medium   = students.filter(s => s.severity === "MEDIUM").length;
@@ -373,24 +547,27 @@ export default function CounselorDashboard() {
     (!appointments[s._id] || appointments[s._id].status !== "DONE")
   ).length;
 
-  /* Sort key: active (PENDING/ONGOING) HIGH → MEDIUM → LOW → no-sev,
-     then completed/no-appt in the same severity order at the bottom */
-  const studentSortKey = (student) => {
-    const app = appointments[student._id];
-    const isActive = app && app.status !== "DONE"; // PENDING or ONGOING
-    const sevNum = SEV_ORDER[student.severity] || 4;
-    return isActive ? sevNum : sevNum + 10;
-  };
-
+  /* Sort: HIGH risk first, then by score descending, then MEDIUM, LOW */
   const filteredStudents = students
     .filter(s => {
       const q = search.toLowerCase();
       const matchSearch = (s.name  || "").toLowerCase().includes(q) ||
                           (s.email || "").toLowerCase().includes(q);
-      const matchSev = sevFilter === "ALL" || s.severity === sevFilter;
+      // Severity and appointment status are independent facets — a MEDIUM
+      // student who missed their session is still a MEDIUM student, so the
+      // HIGH/MEDIUM/LOW filters don't exclude missed ones (that previously
+      // made the summary counts disagree with what the filter actually
+      // showed, since those counts are severity-only).
+      const matchSev = sevFilter === "MISSED"
+        ? appointments[s._id]?.status === "MISSED"
+        : s.severity === sevFilter;
       return matchSearch && matchSev;
     })
-    .sort((a, b) => studentSortKey(a) - studentSortKey(b));
+    .sort((a, b) => {
+      const sevDiff = (SEV_ORDER[a.severity] || 4) - (SEV_ORDER[b.severity] || 4);
+      if (sevDiff !== 0) return sevDiff;
+      return (b.score || 0) - (a.score || 0); // higher score first within same severity
+    });
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -399,8 +576,316 @@ export default function CounselorDashboard() {
     return "Good evening";
   })();
 
+  /* ── overview day/month/year filter ── */
+  const ovFilterRange = (() => {
+    if (ovFilterMode === "day" && ovFilterDay) {
+      return {
+        start: new Date(`${ovFilterDay}T00:00:00`),
+        end:   new Date(`${ovFilterDay}T23:59:59.999`),
+      };
+    }
+    if (ovFilterMode === "month" && ovFilterMonth) {
+      const [y, m] = ovFilterMonth.split("-").map(Number);
+      return {
+        start: new Date(y, m - 1, 1, 0, 0, 0, 0),
+        end:   new Date(y, m, 0, 23, 59, 59, 999), // day 0 of next month = last day of this one
+      };
+    }
+    if (ovFilterMode === "year" && ovFilterYear) {
+      const y = Number(ovFilterYear);
+      return {
+        start: new Date(y, 0, 1, 0, 0, 0, 0),
+        end:   new Date(y, 11, 31, 23, 59, 59, 999),
+      };
+    }
+    return null; // "all"
+  })();
+
+  // Appointment-based Overview stats scoped to the filtered range (by
+  // scheduleDate) when a filter is active; otherwise the usual all-time
+  // per-student-latest counts, unchanged from before this filter existed.
+  // Deduped to each student's MOST RECENT appointment within the range, same
+  // as the unfiltered `appointments` map — otherwise a student rescheduled
+  // or seen more than once in the period gets counted multiple times.
+  const ovStudentApptMap = ovFilterRange
+    ? (() => {
+        const map = {};
+        apptList
+          .filter(a => a.scheduleDate && a.studentId &&
+            new Date(a.scheduleDate) >= ovFilterRange.start &&
+            new Date(a.scheduleDate) <= ovFilterRange.end)
+          .forEach(a => {
+            const sid = typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+            const existing = map[sid];
+            if (!existing || new Date(a.createdAt) > new Date(existing.createdAt)) map[sid] = a;
+          });
+        return map;
+      })()
+    : null;
+  const ovStatsSource    = ovStudentApptMap ? Object.values(ovStudentApptMap) : Object.values(appointments);
+  const ovPending         = ovStatsSource.filter(a => a.status === "PENDING").length;
+  // "Active" = still in the pipeline — scheduled or in progress, not yet
+  // done/missed/cancelled. (ONGOING is never actually set by the app today,
+  // so in practice this equals the pending count, but stays correct if that changes.)
+  const ovActiveCount     = ovStatsSource.filter(a => a.status === "PENDING" || a.status === "ONGOING").length;
+
+  // "Total" for the Completion Rate card — when a day/month/year filter is
+  // active, only students who SIGNED UP in that period count; otherwise the
+  // full roster.
+  const ovSignupCohortIds = ovFilterRange
+    ? new Set(
+        students
+          .filter(s => s.createdAt &&
+            new Date(s.createdAt) >= ovFilterRange.start &&
+            new Date(s.createdAt) <= ovFilterRange.end)
+          .map(s => s._id)
+      )
+    : null;
+  const ovTotal = ovSignupCohortIds ? ovSignupCohortIds.size : total;
+
+  // Students counted as "done" — anyone (within the signup cohort above, if
+  // filtered) with AT LEAST ONE completed (DONE) appointment ever, even if
+  // they've since been booked again (e.g. after a monthly reassessment) and
+  // their MOST RECENT appointment isn't Done. ovStatsSource above only
+  // reflects each student's latest appointment, so it can't be used here —
+  // it would drop students exactly like that.
+  const ovDoneStudentIds = new Set(
+    apptList
+      .filter(a => {
+        if (!a.studentId || a.status !== "DONE") return false;
+        if (!ovSignupCohortIds) return true;
+        const sid = typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+        return ovSignupCohortIds.has(sid);
+      })
+      .map(a => (typeof a.studentId === "object" ? a.studentId._id : a.studentId))
+  );
+  const ovDone = ovDoneStudentIds.size;
+
+  // Completion rate is done students out of the (possibly signup-filtered)
+  // student total — e.g. "3 out of 39 students".
+  const ovCompletionRate  = ovTotal > 0 ? Math.round(ovDone / ovTotal * 100) : 0;
+
   /* ── mood analytics ── */
   const totalMoods = analytics?.moods?.reduce((s, m) => s + m.count, 0) || 0;
+
+  /* ── notification panel — computed LIVE from current appointment/
+     conversation state on every render, instead of an event log that only
+     ever captured a status change once and then forgot it existed the
+     moment the page reloaded. `dismissedNotifIds` (persisted) is what makes
+     a dismissal stick instead of the item reappearing on the next recompute. ── */
+  const notifNameFor = (a) => typeof a.studentId === "object" ? (a.studentId.name || "Student") : "Student";
+  const notifRoomFor = (a) => typeof a.studentId === "object" ? a.studentId._id : a.studentId;
+
+  const liveMissedNotifs = apptList
+    .filter(a => a.scheduleDate && a.studentId && a.status === "MISSED")
+    .map(a => ({
+      id: `missed_${a._id}`, kind: "missed", appt: a, name: notifNameFor(a), roomId: notifRoomFor(a),
+      addedAt: a.missedAt ? new Date(a.missedAt) : new Date(a.scheduleDate),
+    }))
+    .sort((a, b) => b.addedAt - a.addedAt);
+
+  const liveCancelledNotifs = apptList
+    .filter(a => a.scheduleDate && a.studentId && a.status === "CANCELLED")
+    .map(a => ({
+      id: `cancelled_${a._id}`, kind: "cancelled", appt: a, name: notifNameFor(a), roomId: notifRoomFor(a),
+      reason: a.cancelReason,
+      addedAt: a.cancelledAt ? new Date(a.cancelledAt) : new Date(a.scheduleDate),
+    }))
+    .sort((a, b) => b.addedAt - a.addedAt);
+
+  const liveChatNotifs = conversations
+    .filter(c => c.unread > 0 && c.lastSenderId && c.lastSenderId !== "system")
+    .map(c => ({
+      id: `chat_${c.roomId}_${c.lastAt}`, kind: "chat", name: c.studentName, roomId: c.roomId,
+      unreadCount: c.unread, lastMessage: c.lastMessage,
+      addedAt: c.lastAt ? new Date(c.lastAt) : new Date(),
+    }))
+    .sort((a, b) => b.addedAt - a.addedAt);
+
+  const liveActiveAppts = apptList
+    .filter(a => a.scheduleDate && a.studentId && !["CANCELLED", "MISSED"].includes(a.status))
+    .map(a => ({ id: `live_${a._id}`, appt: a, name: notifNameFor(a), addedAt: new Date() }));
+
+  const liveUpcomingNotifs = liveActiveAppts
+    .filter(n => n.appt.status === "PENDING")
+    .sort((a, b) => new Date(a.appt.scheduleDate) - new Date(b.appt.scheduleDate));
+
+  const liveDoneNotifs = liveActiveAppts
+    .filter(n => ["DONE", "ONGOING"].includes(n.appt.status))
+    .sort((a, b) => new Date(b.appt.scheduleDate) - new Date(a.appt.scheduleDate));
+
+  // "All" = actionable items — missed/cancelled/unread chats, plus pending
+  // appointments that are imminent or overdue (the Upcoming tab is the
+  // comprehensive list of every pending appointment regardless of urgency).
+  const liveUrgentPendingNotifs = liveUpcomingNotifs.filter(n =>
+    Math.round((new Date(n.appt.scheduleDate) - new Date()) / 60000) <= 60
+  );
+  const liveAllNotifs = [...liveMissedNotifs, ...liveCancelledNotifs, ...liveChatNotifs, ...liveUrgentPendingNotifs]
+    .filter(n => !dismissedNotifIds.has(n.id))
+    .sort((a, b) => b.addedAt - a.addedAt);
+  const notifBadgeCount = liveAllNotifs.length;
+
+  // Renders one notification card — shared by the full panel list and the
+  // corner toast, so both always look identical. `dismissible` adds a
+  // per-card ✕ (only makes sense for the panel — the toast has its own).
+  const renderNotifCard = (n, { dismissible = false } = {}) => {
+    const now = new Date();
+    const secAgo = Math.floor((now - new Date(n.addedAt)) / 1000);
+    const relAge = secAgo < 60 ? "just now"
+      : secAgo < 3600 ? `${Math.floor(secAgo / 60)}m ago`
+      : secAgo < 86400 ? `${Math.floor(secAgo / 3600)}h ago`
+      : new Date(n.addedAt).toLocaleDateString();
+
+    const dismissBtn = dismissible && (
+      <button
+        onClick={(e) => { e.stopPropagation(); dismissNotif(n.id); }}
+        style={s.notifItemDismiss}
+        title="Dismiss"
+      >✕</button>
+    );
+
+    const goToChat = (e) => {
+      e?.stopPropagation(); // don't let the toast wrapper's click reopen the panel
+      const sid = n.roomId || (n.appt?.studentId && typeof n.appt.studentId === "object" ? n.appt.studentId._id : n.appt?.studentId);
+      const st = students.find(st => String(st._id) === String(sid));
+      if (st) openChat(st);
+      else if (n.roomId) { setChatRoom(n.roomId); setTab("chat"); }
+      setNotifOpen(false);
+    };
+
+    const goToSchedule = (e) => {
+      e.stopPropagation();
+      setNotifOpen(false);
+      setTab("schedule");
+    };
+
+    if (n.kind === "chat") {
+      return (
+        <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #5B6BD8" }}>
+          {dismissBtn}
+          <div style={s.notifItemTop}>
+            <span style={s.notifItemName}>💬 {n.name}</span>
+            <span style={{ ...s.notifItemTag, background: "#EEF0FD", color: "#5B6BD8" }}>
+              {n.unreadCount} new {n.unreadCount === 1 ? "message" : "messages"}
+            </span>
+          </div>
+          <div style={s.notifItemMeta}>
+            <span style={{ fontSize: "12px", color: "#7B7F9E", fontStyle: "italic", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              "{n.lastMessage}"
+            </span>
+            <span style={s.notifItemTime}>{relAge}</span>
+          </div>
+          <div style={s.notifItemActions}>
+            <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+              Open Chat →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (n.kind === "missed") {
+      return (
+        <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #9CA3AF" }}>
+          {dismissBtn}
+          <div style={s.notifItemTop}>
+            <span style={s.notifItemName}>⏰ {n.name}</span>
+            <span style={{ ...s.notifItemTag, background: "#F1F2F6", color: "#7B7F9E" }}>
+              Missed
+            </span>
+          </div>
+          <div style={s.notifItemMeta}>
+            <span style={{ fontSize: "12px", color: "#7B7F9E" }}>
+              Schedule expired — {new Date(n.appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+            </span>
+            <span style={s.notifItemTime}>{relAge}</span>
+          </div>
+          <div style={s.notifItemActions}>
+            <button onClick={goToSchedule} style={s.notifActionBtn}>
+              View Schedule →
+            </button>
+            <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+              💬 Chat
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (n.kind === "cancelled") {
+      return (
+        <div key={n.id} style={{ ...s.notifItem, borderLeft: "4px solid #F87171" }}>
+          {dismissBtn}
+          <div style={s.notifItemTop}>
+            <span style={s.notifItemName}>🚫 {n.name}</span>
+            <span style={{ ...s.notifItemTag, background: "#FFF0EE", color: "#F87171" }}>
+              Cancelled
+            </span>
+          </div>
+          <div style={s.notifItemMeta}>
+            <span style={{ fontSize: "12px", color: "#7B7F9E", fontStyle: n.reason ? "italic" : "normal" }}>
+              {n.reason ? `"${n.reason}"` : `Was scheduled for ${new Date(n.appt.scheduleDate).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`}
+            </span>
+            <span style={s.notifItemTime}>{relAge}</span>
+          </div>
+          <div style={s.notifItemActions}>
+            <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+              💬 Chat
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Plain appointment notification ──
+    const apptTime = new Date(n.appt.scheduleDate);
+    const diffMin  = Math.round((apptTime - now) / 60000);
+    const sameDay  = apptTime.toDateString() === now.toDateString();
+
+    const urgency = n.type === "done"    ? "done"
+      : n.type === "ongoing"             ? "ongoing"
+      : n.appt.status === "DONE"         ? "done"
+      : n.appt.status === "ONGOING"      ? "ongoing"
+      : diffMin < 0 && sameDay           ? "overdue"
+      : diffMin >= 0 && diffMin <= 15    ? "now"
+      : diffMin > 15 && diffMin <= 60    ? "soon"
+      : "scheduled";
+
+    const meta = {
+      done:      { color: "#38C9B8", bg: "#E6FAF7", icon: "✅", label: "Session done" },
+      ongoing:   { color: "#5B6BD8", bg: "#EEF0FD", icon: "🔄", label: "Session ongoing" },
+      overdue:   { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: `Overdue ${Math.abs(diffMin)}m ago` },
+      now:       { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: diffMin <= 0 ? "Starting NOW" : `In ${diffMin} min` },
+      soon:      { color: "#F9A72B", bg: "#FFF8EC", icon: "⚡", label: `In ${diffMin} min` },
+      scheduled: { color: "#5B6BD8", bg: "#EEF0FD", icon: "📅", label: apptTime.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) },
+    }[urgency];
+
+    return (
+      <div key={n.id} style={{ ...s.notifItem, borderLeft: `4px solid ${meta.color}` }}>
+        {dismissBtn}
+        <div style={s.notifItemTop}>
+          <span style={s.notifItemName}>{n.name}</span>
+          <span style={{ ...s.notifItemTag, background: meta.bg, color: meta.color }}>
+            {meta.icon} {meta.label}
+          </span>
+        </div>
+        <div style={s.notifItemMeta}>
+          <span style={{ ...s.notifItemSev, color: SEV_COLOR[n.appt.severity] }}>
+            {n.appt.severity}
+          </span>
+          <span style={s.notifItemTime}>{relAge}</span>
+        </div>
+        <div style={s.notifItemActions}>
+          <button onClick={goToSchedule} style={s.notifActionBtn}>
+            View Schedule →
+          </button>
+          <button onClick={goToChat} style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}>
+            💬 Chat
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -413,6 +898,29 @@ export default function CounselorDashboard() {
 
   return (
     <div style={s.layout}>
+
+      {/* ══════════ TOAST ══════════ */}
+      {toast && (
+        <div className="animate-bounceIn" style={s.toastWrap}>
+          {toast.kind === "summary" ? (
+            <div style={s.toast} onClick={() => { setToast(null); setNotifOpen(true); }}>
+              <span style={s.toastText}>🔔 {toast.count} new notifications</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setToast(null); }}
+                style={s.toastClose}
+              >✕</button>
+            </div>
+          ) : (
+            <div style={s.toastCard} onClick={() => { setToast(null); setNotifOpen(true); }}>
+              {renderNotifCard(toast)}
+              <button
+                onClick={(e) => { e.stopPropagation(); setToast(null); }}
+                style={s.toastCardClose}
+              >✕</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ══════════ SIDEBAR ══════════ */}
       <aside style={s.sidebar}>
@@ -445,6 +953,9 @@ export default function CounselorDashboard() {
               {item.key === "students" && high > 0 && (
                 <span style={s.navBadge}>{high}</span>
               )}
+              {item.key === "chat" && totalUnread > 0 && (
+                <span style={s.navBadge}>{totalUnread > 99 ? "99+" : totalUnread}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -458,8 +969,8 @@ export default function CounselorDashboard() {
           <span style={{ flex: 1, fontSize: "13px", color: "rgba(255,255,255,0.75)", fontFamily: "'Poppins',sans-serif" }}>
             Notifications
           </span>
-          {notifs.length > 0 && (
-            <span style={s.notifBadge}>{notifs.length > 99 ? "99+" : notifs.length}</span>
+          {notifBadgeCount > 0 && (
+            <span style={s.notifBadge}>{notifBadgeCount > 99 ? "99+" : notifBadgeCount}</span>
           )}
         </button>
 
@@ -506,18 +1017,15 @@ export default function CounselorDashboard() {
               </div>
               {tab === "students" && (
                 <div style={s.filterRow}>
-                  {["ALL","HIGH","MEDIUM","LOW"].map(f => (
+                  {["HIGH","MEDIUM","LOW","MISSED"].map(f => (
                     <button
                       key={f}
                       onClick={() => setSevFilter(f)}
                       style={{
                         ...s.filterBtn,
-                        background: sevFilter === f
-                          ? (f === "ALL" ? "#5B6BD8" : SEV_COLOR[f])
-                          : "#fff",
-                        color: sevFilter === f ? "#fff"
-                          : (f === "ALL" ? "#5B6BD8" : SEV_COLOR[f]),
-                        borderColor: f === "ALL" ? "#5B6BD8" : (SEV_COLOR[f] || "#5B6BD8"),
+                        background: sevFilter === f ? SEV_COLOR[f] : "#fff",
+                        color: sevFilter === f ? "#fff" : SEV_COLOR[f],
+                        borderColor: SEV_COLOR[f] || "#5B6BD8",
                       }}
                     >
                       {f}
@@ -532,19 +1040,120 @@ export default function CounselorDashboard() {
         {/* ══════════ OVERVIEW TAB ══════════ */}
         {tab === "overview" && (
           <>
+            {/* Date filter — scopes the stats/mood breakdown below to a day, month, or year */}
+            <div style={s.ovFilterBar}>
+              <div style={s.ovFilterModeGroup}>
+                {[
+                  { key: "all",   label: "All time" },
+                  { key: "day",   label: "Day" },
+                  { key: "month", label: "Month" },
+                  { key: "year",  label: "Year" },
+                ].map(m => (
+                  <button
+                    key={m.key}
+                    onClick={() => setOvFilterMode(m.key)}
+                    style={{ ...s.ovFilterModeBtn, ...(ovFilterMode === m.key ? s.ovFilterModeBtnActive : {}) }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              {ovFilterMode === "day" && (
+                <input type="date" value={ovFilterDay} onChange={e => setOvFilterDay(e.target.value)} style={s.ovFilterInput} />
+              )}
+              {ovFilterMode === "month" && (
+                <input type="month" value={ovFilterMonth} onChange={e => setOvFilterMonth(e.target.value)} style={s.ovFilterInput} />
+              )}
+              {ovFilterMode === "year" && (
+                <input
+                  type="number"
+                  value={ovFilterYear}
+                  onChange={e => setOvFilterYear(e.target.value)}
+                  min="2000" max="2100"
+                  style={{ ...s.ovFilterInput, width: "90px" }}
+                />
+              )}
+            </div>
+
             {/* Smart stat row */}
             <div style={s.statsGrid}>
               <StatCard icon="🚨" label="Needs Action"     value={needsActionCount} accent="#F87171" sub="HIGH risk, unresolved" />
-              <StatCard icon="🔄" label="Active Sessions"  value={ongoingCount}     accent="#5B6BD8" sub="Currently in progress" />
-              <StatCard icon="⏳" label="Awaiting Session" value={pending}          accent="#F9A72B" sub="Appointments pending" />
-              <StatCard icon="✅" label="Completion Rate"  value={`${completionRate}%`} accent="#38C9B8" sub={`${done} of ${pending + done} sessions done`} />
+              <StatCard icon="🔄" label="Active Sessions"  value={ovActiveCount}    accent="#5B6BD8" sub="Not yet done or missed" />
+              <StatCard icon="⏳" label="Awaiting Session" value={ovPending}        accent="#F9A72B" sub="Appointments pending" />
+              <StatCard icon="✅" label="Completion Rate"  value={`${ovCompletionRate}%`} accent="#38C9B8" sub={`${ovDone} out of ${ovTotal} students`} />
+            </div>
+
+            {/* Mood Climate */}
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background: "#5B6BD8" }} />
+                  <h2 style={s.cardTitle}>Mood Climate</h2>
+                </div>
+                <span style={s.cardSub}>{totalMoods} entries</span>
+              </div>
+
+              {totalMoods === 0 ? (
+                <div style={s.emptyBox}>
+                  <span style={{ fontSize: "28px" }}>📊</span>
+                  <p style={s.emptyText}>No mood data recorded yet</p>
+                </div>
+              ) : (() => {
+                const top  = (analytics?.moods || []).slice().sort((a, b) => b.count - a.count)[0];
+                const meta = top ? (MOOD_META[top._id] || { emoji: "❓", color: "#ccc" }) : null;
+                return (
+                  <>
+                    {top && meta && (
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: "14px",
+                        padding: "14px 16px",
+                        background: meta.color + "18",
+                        borderRadius: "12px",
+                        marginBottom: "16px",
+                        border: `1.5px solid ${meta.color}33`,
+                      }}>
+                        <span style={{ fontSize: "38px", lineHeight: 1 }}>{meta.emoji}</span>
+                        <div>
+                          <div style={{ fontSize: "10px", fontWeight: "700", color: "#A8AECB", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins',sans-serif", marginBottom: "3px" }}>
+                            Most reported mood
+                          </div>
+                          <div style={{ fontSize: "19px", fontWeight: "700", color: meta.color, fontFamily: "'Poppins',sans-serif", lineHeight: 1.2 }}>
+                            {top._id}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#A8AECB", marginTop: "2px" }}>
+                            {top.count} of {totalMoods} entries ({Math.round(top.count / totalMoods * 100)}%)
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div style={s.moodBars}>
+                      {(analytics?.moods || []).map(m => {
+                        const mm  = MOOD_META[m._id] || { emoji: "❓", color: "#ccc" };
+                        const pct = Math.round(m.count / totalMoods * 100);
+                        return (
+                          <div key={m._id} style={s.moodBarRow}>
+                            <div style={s.moodBarLabel}>
+                              <span style={s.moodEmoji}>{mm.emoji}</span>
+                              <span style={s.moodName}>{m._id}</span>
+                            </div>
+                            <div style={s.moodBarTrack}>
+                              <div style={{ ...s.moodBarFill, width: `${pct}%`, background: mm.color }} />
+                            </div>
+                            <span style={s.moodBarPct}>{pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Overview Mini Calendar */}
             {(() => {
               const ovDates = getWeekDates(ovWeekOffset);
               const ovStart = ovDates[0].toLocaleDateString("en-US", { month: "short", day: "numeric" });
-              const ovEnd   = ovDates[4].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+              const ovEnd   = ovDates[5].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
               const isToday = (d) => d.toDateString() === new Date().toDateString();
 
               const ovSameDay = (d, day) =>
@@ -564,15 +1173,19 @@ export default function CounselorDashboard() {
                 return false;
               };
 
+              // Missed appointments still show (greyed out) so a counselor can
+              // see a no-show at a glance and reschedule it right from the
+              // grid — only cancelled ones (which never actually happened at
+              // that slot) are left off.
               const findSlot = (day, slot) =>
                 apptList.find(a => {
-                  if (!a.scheduleDate) return false;
+                  if (!a.scheduleDate || a.status === "CANCELLED") return false;
                   const d = new Date(a.scheduleDate);
                   return ovSameDay(d, day) && ovMatchSlot(d, slot);
                 });
 
               const weekAppts = apptList.filter(a => {
-                if (!a.scheduleDate) return false;
+                if (!a.scheduleDate || a.status === "CANCELLED") return false;
                 const d = new Date(a.scheduleDate);
                 return ovDates.some(wd => ovSameDay(d, wd));
               });
@@ -637,17 +1250,23 @@ export default function CounselorDashboard() {
                             <div style={s.ovTimeCol}>{slot.label}</div>
                             {ovDates.map((d, di) => {
                               const appt = findSlot(d, slot);
-                              const sn   = appt && typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "";
+                              const sn   = appt?.studentId && typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "";
                               return (
                                 <div key={di} style={{ ...s.ovSlot, background: isToday(d) ? "rgba(91,107,216,0.02)" : undefined }}>
                                   {appt && (
                                     <div
-                                      style={{ ...s.ovChip, borderLeftColor: SEV_COLOR[appt.severity] || "#5B6BD8" }}
+                                      style={{
+                                        ...s.ovChip,
+                                        borderLeftColor: appt.status === "MISSED" ? "#9CA3AF" : (SEV_COLOR[appt.severity] || "#5B6BD8"),
+                                        opacity: appt.status === "MISSED" ? 0.6 : 1,
+                                      }}
                                       onClick={() => openReschedule(appt)}
-                                      title={`${sn} — ${appt.severity} — Click to reschedule`}
+                                      title={`${sn} — ${appt.severity}${appt.status === "MISSED" ? " — Missed" : ""} — Click to reschedule`}
                                     >
                                       <div style={s.ovChipName}>{sn}</div>
-                                      <div style={{ ...s.ovChipSev, color: SEV_COLOR[appt.severity] }}>{appt.severity}</div>
+                                      <div style={{ ...s.ovChipSev, color: appt.status === "MISSED" ? "#9CA3AF" : SEV_COLOR[appt.severity] }}>
+                                        {appt.status === "MISSED" ? "⚠ Missed" : appt.severity}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -669,115 +1288,6 @@ export default function CounselorDashboard() {
               );
             })()}
 
-            {/* Two-col: Mood Climate + Session Pipeline */}
-            <div style={s.twoCol}>
-
-              {/* Mood Climate */}
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background: "#5B6BD8" }} />
-                    <h2 style={s.cardTitle}>Mood Climate</h2>
-                  </div>
-                  <span style={s.cardSub}>{totalMoods} entries</span>
-                </div>
-
-                {totalMoods === 0 ? (
-                  <div style={s.emptyBox}>
-                    <span style={{ fontSize: "28px" }}>📊</span>
-                    <p style={s.emptyText}>No mood data recorded yet</p>
-                  </div>
-                ) : (() => {
-                  const top  = (analytics?.moods || []).slice().sort((a, b) => b.count - a.count)[0];
-                  const meta = top ? (MOOD_META[top._id] || { emoji: "❓", color: "#ccc" }) : null;
-                  return (
-                    <>
-                      {top && meta && (
-                        <div style={{
-                          display: "flex", alignItems: "center", gap: "14px",
-                          padding: "14px 16px",
-                          background: meta.color + "18",
-                          borderRadius: "12px",
-                          marginBottom: "16px",
-                          border: `1.5px solid ${meta.color}33`,
-                        }}>
-                          <span style={{ fontSize: "38px", lineHeight: 1 }}>{meta.emoji}</span>
-                          <div>
-                            <div style={{ fontSize: "10px", fontWeight: "700", color: "#A8AECB", textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "'Poppins',sans-serif", marginBottom: "3px" }}>
-                              Most reported mood
-                            </div>
-                            <div style={{ fontSize: "19px", fontWeight: "700", color: meta.color, fontFamily: "'Poppins',sans-serif", lineHeight: 1.2 }}>
-                              {top._id}
-                            </div>
-                            <div style={{ fontSize: "12px", color: "#A8AECB", marginTop: "2px" }}>
-                              {top.count} of {totalMoods} entries ({Math.round(top.count / totalMoods * 100)}%)
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      <div style={s.moodBars}>
-                        {(analytics?.moods || []).map(m => {
-                          const mm  = MOOD_META[m._id] || { emoji: "❓", color: "#ccc" };
-                          const pct = Math.round(m.count / totalMoods * 100);
-                          return (
-                            <div key={m._id} style={s.moodBarRow}>
-                              <div style={s.moodBarLabel}>
-                                <span style={s.moodEmoji}>{mm.emoji}</span>
-                                <span style={s.moodName}>{m._id}</span>
-                              </div>
-                              <div style={s.moodBarTrack}>
-                                <div style={{ ...s.moodBarFill, width: `${pct}%`, background: mm.color }} />
-                              </div>
-                              <span style={s.moodBarPct}>{pct}%</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Session Pipeline */}
-              <div style={s.card}>
-                <div style={s.cardHeader}>
-                  <div style={s.cardTitleRow}>
-                    <span style={{ ...s.dot, background: "#7C6FCD" }} />
-                    <h2 style={s.cardTitle}>Session Pipeline</h2>
-                  </div>
-                  <span style={s.cardSub}>{completionRate}% complete</span>
-                </div>
-
-                <div style={s.apptSummary}>
-                  {[
-                    { label: "⏳ Pending",   value: pending,      color: "#F9A72B", bg: "#FFF8EC", desc: "Waiting to start" },
-                    { label: "🔄 Ongoing",   value: ongoingCount, color: "#5B6BD8", bg: "#EEF0FD", desc: "In progress now" },
-                    { label: "✅ Completed", value: done,          color: "#38C9B8", bg: "#E6FAF7", desc: "Sessions closed" },
-                  ].map(row => (
-                    <div key={row.label} style={{ ...s.apptRow, background: row.bg, flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
-                        <span style={{ ...s.apptLabel, color: row.color }}>{row.label}</span>
-                        <span style={{ ...s.apptCount, color: row.color }}>{row.value}</span>
-                      </div>
-                      <span style={{ fontSize: "11px", color: row.color, opacity: 0.7, fontFamily: "'Lato',sans-serif" }}>{row.desc}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={s.apptProgressWrap}>
-                  <p style={s.apptProgressLabel}>Overall completion rate</p>
-                  <div style={s.progressBar}>
-                    <div style={{
-                      ...s.progressFill,
-                      width: `${completionRate}%`,
-                      background: "linear-gradient(90deg,#38C9B8,#5B6BD8)",
-                    }} />
-                  </div>
-                  <p style={s.progressPct}>{completionRate}% of sessions completed</p>
-                </div>
-
-              </div>
-            </div>
           </>
         )}
 
@@ -791,6 +1301,7 @@ export default function CounselorDashboard() {
                 { label:"High Risk",     value: high,                                                                color:"#F87171", bg:"#FFF0EE" },
                 { label:"Medium Risk",   value: medium,                                                              color:"#F9A72B", bg:"#FFF8EC" },
                 { label:"Low Risk",      value: low,                                                                 color:"#38C9B8", bg:"#E6FAF7" },
+                { label:"Missed",        value: students.filter(s => appointments[s._id]?.status === "MISSED").length, color:"#9CA3AF", bg:"#F1F2F6" },
                 { label:"Unresolved",    value: students.filter(s => !appointments[s._id] || appointments[s._id].status !== "DONE").length, color:"#7C6FCD", bg:"#F3F0FF" },
               ].map(c => (
                 <div key={c.label} style={{ display:"flex", alignItems:"center", gap:"7px", padding:"7px 14px", background:c.bg, borderRadius:"99px" }}>
@@ -844,20 +1355,26 @@ export default function CounselorDashboard() {
                                   </div>
                                   <div>
                                     <div style={s.studentCardName}>{student.name}</div>
-                                    <div style={s.studentCardEmail}>{student.email}</div>
+                                    <div style={s.studentCardEmail}>
+                                      {student.email}
+                                      {student.yearLevel && <span style={{ marginLeft:"6px", fontSize:"10px", fontWeight:700, color:"#7C6FCD", background:"rgba(124,111,205,0.1)", padding:"1px 6px", borderRadius:"99px" }}>{student.yearLevel}</span>}
+                                      {student.score > 0 && <span style={{ marginLeft:"4px", fontSize:"10px", fontWeight:700, color: color, background:`${color}18`, padding:"1px 6px", borderRadius:"99px" }}>Score: {student.score}</span>}
+                                    </div>
                                   </div>
                                 </div>
                                 <div style={s.apptStatus}>
                                   {app ? (
                                     app.status === "DONE"
                                       ? <span style={s.stDone}>✓ Session done</span>
-                                      : <span style={{ ...s.stPending, color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B", background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC" }}>{app.status}</span>
+                                      : app.status === "MISSED"
+                                      ? <span style={{ ...s.stPending, color:"#9CA3AF", background:"#F1F2F6" }}>⚠ Missed</span>
+                                      : <span style={{ ...s.stPending, color: app.status === "ONGOING" ? "#5B6BD8" : "#F9A72B", background: app.status === "ONGOING" ? "#EEF0FD" : "#FFF8EC" }}>{statusLabel(app.status)}</span>
                                   ) : <span style={s.stNone}>No appointment</span>}
                                 </div>
                                 <div style={{ display:"flex", flexDirection:"column", gap:"6px", alignItems:"flex-end" }}>
                                   <div style={s.studentCardActions}>
                                     <button onClick={() => openChat(student)} style={s.btnChat}>💬 Chat</button>
-                                    {app && app.status !== "DONE" && (
+                                    {app && !["DONE", "CANCELLED", "MISSED"].includes(app.status) && (
                                       <button onClick={() => setConfirmCompleteId(confirmCompleteId === app._id ? null : app._id)} style={s.btnDone}>✓ Done</button>
                                     )}
                                   </div>
@@ -962,7 +1479,7 @@ export default function CounselorDashboard() {
                   {[
                     { label:"Total",     value:Object.keys(appointments).length, icon:"📋", color:"#5B6BD8" },
                     { label:"Completed", value:done,         icon:"✅", color:"#38C9B8" },
-                    { label:"Pending",   value:pending,      icon:"⏳", color:"#F9A72B" },
+                    { label:"Upcoming",  value:pending,      icon:"⏳", color:"#F9A72B" },
                     { label:"Ongoing",   value:ongoingCount, icon:"🔄", color:"#7C6FCD" },
                   ].map(item => (
                     <div key={item.label} style={{ ...s.sessionCard, borderLeft:`4px solid ${item.color}` }}>
@@ -1018,6 +1535,100 @@ export default function CounselorDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Year Level Breakdown */}
+            <div style={s.card}>
+                <div style={s.cardHeader}>
+                  <div style={s.cardTitleRow}>
+                    <span style={{ ...s.dot, background:"#38C9B8" }} />
+                    <h2 style={s.cardTitle}>Students by Year Level</h2>
+                  </div>
+                  <span style={s.cardSub}>Enrollment distribution</span>
+                </div>
+                <div style={{ display:"flex", gap:"12px", flexWrap:"wrap" }}>
+                  {["Grade 11","Grade 12","1st Year","2nd Year","3rd Year","4th Year"].map(yr => {
+                    const entry = (analytics.yearLevelBreakdown || []).find(e => e._id === yr);
+                    const count = entry?.count || 0;
+                    const totalYr = (analytics.yearLevelBreakdown || []).reduce((s,e) => s + e.count, 0);
+                    const pct = totalYr > 0 ? Math.round(count / totalYr * 100) : 0;
+                    return (
+                      <div key={yr} style={{ flex:"1 1 100px", background:"#F8F9FF", borderRadius:"14px", padding:"16px", textAlign:"center", border:"1.5px solid #E8EAF6" }}>
+                        <div style={{ fontSize:"24px", fontWeight:"800", color:"#5B6BD8", fontFamily:"'Poppins',sans-serif" }}>{count}</div>
+                        <div style={{ fontSize:"13px", fontWeight:"700", color:"#2D3047", fontFamily:"'Poppins',sans-serif", marginTop:"4px" }}>{yr}</div>
+                        <div style={{ fontSize:"11px", color:"#A8AECB", fontFamily:"'Lato',sans-serif", marginTop:"2px" }}>{pct}%</div>
+                        <div style={{ marginTop:"8px", height:"4px", background:"#E8EAF6", borderRadius:"9px" }}>
+                          <div style={{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#38C9B8,#5B6BD8)", borderRadius:"9px" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+            {/* Stress Levels by Year */}
+            <div style={s.card}>
+              <div style={s.cardHeader}>
+                <div style={s.cardTitleRow}>
+                  <span style={{ ...s.dot, background:"#F87171" }} />
+                  <h2 style={s.cardTitle}>Stress Levels by Year</h2>
+                </div>
+                <span style={s.cardSub}>Severity distribution per year level</span>
+              </div>
+              {(() => {
+                const YEARS = ["Grade 11","Grade 12","1st Year","2nd Year","3rd Year","4th Year"];
+                const rows = YEARS.map(yr => {
+                  const find = (sev) => (analytics?.severityByYear || [])
+                    .find(e => e._id.year === yr && e._id.severity === sev)?.count || 0;
+                  const high = find("HIGH"), medium = find("MEDIUM"), low = find("LOW");
+                  return { yr, high, medium, low, total: high + medium + low };
+                }).filter(r => r.total > 0);
+
+                if (rows.length === 0) {
+                  return (
+                    <div style={s.emptyBox}>
+                      <span style={{ fontSize:"32px" }}>📊</span>
+                      <p style={s.emptyText}>No assessment data yet to break down by year level.</p>
+                    </div>
+                  );
+                }
+
+                const mostStressed = rows.reduce((best, r) => (r.high > (best?.high || 0) ? r : best), null);
+
+                return (
+                  <>
+                    {mostStressed && mostStressed.high > 0 && (
+                      <div style={{ display:"flex", alignItems:"center", gap:"8px", background:"#FFF0EE", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:"12px", padding:"10px 14px", marginBottom:"18px" }}>
+                        <span style={{ fontSize:"16px" }}>⚠️</span>
+                        <span style={{ fontSize:"13px", fontWeight:600, color:"#F87171", fontFamily:"'Lato',sans-serif" }}>
+                          {mostStressed.yr} has the most high-risk students ({mostStressed.high})
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ display:"flex", flexDirection:"column", gap:"16px" }}>
+                      {rows.map(r => (
+                        <div key={r.yr}>
+                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"6px" }}>
+                            <span style={{ fontSize:"13px", fontWeight:700, color:"#2D3047", fontFamily:"'Poppins',sans-serif" }}>{r.yr}</span>
+                            <span style={{ fontSize:"11px", color:"#A8AECB", fontFamily:"'Lato',sans-serif" }}>{r.total} assessed</span>
+                          </div>
+                          <div style={{ display:"flex", height:"10px", borderRadius:"6px", overflow:"hidden", background:"#E8EAF6" }}>
+                            {r.high   > 0 && <div style={{ width:`${r.high   / r.total * 100}%`, background:"#F87171" }} title={`${r.high} HIGH`} />}
+                            {r.medium > 0 && <div style={{ width:`${r.medium / r.total * 100}%`, background:"#F9A72B" }} title={`${r.medium} MEDIUM`} />}
+                            {r.low    > 0 && <div style={{ width:`${r.low    / r.total * 100}%`, background:"#38C9B8" }} title={`${r.low} LOW`} />}
+                          </div>
+                          <div style={{ display:"flex", gap:"14px", marginTop:"6px" }}>
+                            <span style={{ fontSize:"11px", color:"#F87171", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>🔴 {r.high} High</span>
+                            <span style={{ fontSize:"11px", color:"#F9A72B", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>🟡 {r.medium} Medium</span>
+                            <span style={{ fontSize:"11px", color:"#38C9B8", fontWeight:600, fontFamily:"'Lato',sans-serif" }}>🟢 {r.low} Low</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
           </div>
         )}
 
@@ -1025,7 +1636,7 @@ export default function CounselorDashboard() {
         {tab === "schedule" && (() => {
           const weekDates = getWeekDates(weekOffset);
           const weekStart = weekDates[0].toLocaleDateString("en-US", { month: "short", day: "numeric" });
-          const weekEnd   = weekDates[4].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const weekEnd   = weekDates[5].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
           const sameDay = (d, day) =>
             d.getFullYear() === day.getFullYear() &&
@@ -1046,19 +1657,23 @@ export default function CounselorDashboard() {
             return false;
           };
 
+          // Missed appointments still show (greyed out) so a counselor can
+          // see a no-show at a glance and reschedule it right from the grid —
+          // only cancelled ones (which never actually happened at that slot)
+          // are left off.
           const findApptInSlot = (day, slot) =>
             apptList.find(a => {
-              if (!a.scheduleDate) return false;
+              if (!a.scheduleDate || a.status === "CANCELLED") return false;
               const d = new Date(a.scheduleDate);
               return sameDay(d, day) && matchesSlot(d, slot);
             });
 
           const isToday = (d) => d.toDateString() === new Date().toDateString();
-          const studentName = (appt) => typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "Student";
+          const studentName = (appt) => appt.studentId && typeof appt.studentId === "object" ? (appt.studentId.name || "Student") : "Student";
 
           // How urgent is an appointment chip
           const chipUrgency = (appt) => {
-            if (!appt.scheduleDate || appt.status === "DONE") return null;
+            if (!appt.scheduleDate || appt.status === "DONE" || appt.status === "MISSED") return null;
             const diffMin = Math.round((new Date(appt.scheduleDate) - new Date()) / 60000);
             if (diffMin < 0 && diffMin > -120) return "overdue";
             if (diffMin >= 0 && diffMin <= 15) return "now";
@@ -1126,15 +1741,17 @@ export default function CounselorDashboard() {
                               {appt && (() => {
                                 const urg = chipUrgency(appt);
                                 const urgColor = urg === "overdue" ? "#F87171" : urg === "now" ? "#F87171" : urg === "soon" ? "#F9A72B" : null;
+                                const missed = appt.status === "MISSED";
                                 return (
                                   <div
                                     style={{
                                       ...s.apptChip,
-                                      borderLeftColor: SEV_COLOR[appt.severity] || "#5B6BD8",
+                                      borderLeftColor: missed ? "#9CA3AF" : (SEV_COLOR[appt.severity] || "#5B6BD8"),
+                                      opacity: missed ? 0.6 : 1,
                                       boxShadow: urg === "now" ? "0 0 0 2px #F8717155" : urg === "overdue" ? "0 0 0 2px #F8717133" : undefined,
                                     }}
                                     onClick={() => openReschedule(appt)}
-                                    title="Click to reschedule"
+                                    title={missed ? "Missed — click to reschedule" : "Click to reschedule"}
                                   >
                                     {urg && (
                                       <div style={{ fontSize: "9px", fontWeight: "700", color: urgColor, marginBottom: "2px", letterSpacing: "0.04em" }}>
@@ -1142,11 +1759,11 @@ export default function CounselorDashboard() {
                                       </div>
                                     )}
                                     <div style={s.apptChipName}>{studentName(appt)}</div>
-                                    <div style={{ ...s.apptChipMeta, color: SEV_COLOR[appt.severity] }}>
+                                    <div style={{ ...s.apptChipMeta, color: missed ? "#9CA3AF" : SEV_COLOR[appt.severity] }}>
                                       {appt.severity}
                                     </div>
-                                    <div style={{ ...s.apptChipMeta, color: appt.status === "DONE" ? "#38C9B8" : appt.status === "ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
-                                      {appt.status}
+                                    <div style={{ ...s.apptChipMeta, color: missed ? "#9CA3AF" : appt.status === "DONE" ? "#38C9B8" : appt.status === "ONGOING" ? "#5B6BD8" : "#F9A72B" }}>
+                                      {missed ? "⚠ Missed" : statusLabel(appt.status)}
                                     </div>
                                   </div>
                                 );
@@ -1159,7 +1776,7 @@ export default function CounselorDashboard() {
                   })}
                 </div>
 
-                {apptList.filter(a => a.scheduleDate).length === 0 && (
+                {apptList.filter(a => a.scheduleDate && a.status !== "CANCELLED").length === 0 && (
                   <div style={s.emptyBox}>
                     <span style={{ fontSize:"32px" }}>📅</span>
                     <p style={s.emptyText}>No appointments scheduled yet</p>
@@ -1182,6 +1799,12 @@ export default function CounselorDashboard() {
                         {rescheduleAppt.severity}
                       </span>
                     </div>
+                    <div style={s.modalInfoRow}>
+                      <span style={s.modalInfoLabel}>Session length</span>
+                      <span style={s.modalInfoValue}>
+                        {rescheduleAppt.durationMinutes || SESSION_MINUTES[rescheduleAppt.severity] || 30} min
+                      </span>
+                    </div>
                     {rescheduleAppt.scheduleDate && (
                       <div style={s.modalInfoRow}>
                         <span style={s.modalInfoLabel}>Current</span>
@@ -1191,7 +1814,7 @@ export default function CounselorDashboard() {
                       </div>
                     )}
                     <div style={s.modalGroup}>
-                      <label style={s.modalLabel}>New Date <span style={{ color:"#A8AECB", fontWeight:"400" }}>(Mon–Fri only)</span></label>
+                      <label style={s.modalLabel}>New Date <span style={{ color:"#A8AECB", fontWeight:"400" }}>(Mon–Sat only)</span></label>
                       <input
                         type="date"
                         value={rescheduleDate}
@@ -1202,13 +1825,15 @@ export default function CounselorDashboard() {
                     <div style={s.modalGroup}>
                       <label style={s.modalLabel}>Time Slot</label>
                       <select value={rescheduleTime} onChange={e => setRescheduleTime(e.target.value)} style={s.modalInput}>
-                        {SCHED_SLOTS.filter(sl => !sl.break).map(sl => (
+                        {SCHED_SLOTS.filter(sl => !sl.break && !(
+                          rescheduleAppt.severity !== "LOW" && (sl.value === "11:30" || sl.value === "15:30")
+                        )).map(sl => (
                           <option key={sl.value} value={sl.value}>{sl.label}</option>
                         ))}
                       </select>
                     </div>
                     {rescheduleErr && <div style={{ color:"#F87171", fontSize:"13px", fontWeight:600, textAlign:"center", marginTop:"10px" }}>{rescheduleErr}</div>}
-                    <div style={{ display:"flex", gap:"10px", marginTop:"14px" }}>
+                    <div style={{ display:"flex", gap:"10px", marginTop:"14px", flexWrap:"wrap" }}>
                       <button onClick={handleReschedule} disabled={rescheduling} style={s.modalSaveBtn}>
                         {rescheduling ? "Saving…" : "Save Schedule"}
                       </button>
@@ -1329,8 +1954,10 @@ export default function CounselorDashboard() {
                           <div style={s.msChatSub}>
                             {chatTyping ? (
                               <span style={{ color:"#5B6BD8" }}>typing…</span>
-                            ) : (
+                            ) : isStudentOnline(chatRoom) ? (
                               <span>● Online</span>
+                            ) : (
+                              <span style={{ color:"rgba(255,255,255,0.5)" }}>Offline</span>
                             )}
                           </div>
                         </div>
@@ -1358,19 +1985,31 @@ export default function CounselorDashboard() {
                       {chatMessages.map((msg, i) => {
                         const isMe   = String(msg.senderId) === String(counselorId);
                         const isLast = i === chatMessages.length - 1;
+                        // Messenger-style grouping: consecutive messages from
+                        // the same sender sit closer together.
+                        const nextMsg = chatMessages[i + 1];
+                        const groupedWithNext = nextMsg && String(nextMsg.senderId) === String(msg.senderId);
                         return (
-                          <div key={i} style={{ display:"flex", justifyContent: isMe ? "flex-end" : "flex-start", marginBottom:"6px", alignItems:"flex-end", gap:"8px" }}>
+                          <div key={i} style={{ display:"flex", justifyContent: isMe ? "flex-end" : "flex-start", marginBottom: groupedWithNext ? "3px" : "6px", alignItems:"flex-end", gap:"8px" }}>
                             {!isMe && (
                               <div style={s.msMsgAva}>
                                 {chatStudent?.name?.[0]?.toUpperCase() || "🎓"}
                               </div>
                             )}
-                            <div style={isMe ? s.msMyBubble : s.msTheirBubble}>
-                              <span style={s.msMsgText}>{msg.message}</span>
-                              <div style={s.msMsgMeta}>
-                                <span>{new Date(msg.createdAt).toLocaleTimeString([],{ hour:"2-digit", minute:"2-digit" })}</span>
-                                {isMe && isLast && <span style={{ marginLeft:"4px" }}>{msg.seen ? "✓✓" : "✓"}</span>}
+                            <div style={{ display:"flex", flexDirection:"column", alignItems: isMe ? "flex-end" : "flex-start", maxWidth:"78%" }}>
+                              <div style={isMe ? s.msMyBubble : s.msTheirBubble}>
+                                <span style={s.msMsgText}>{msg.message}</span>
+                                <div style={s.msMsgMeta}>
+                                  <span>{chatFormatTime(msg.createdAt)}</span>
+                                </div>
                               </div>
+                              {isMe && isLast && (
+                                <div style={{ fontSize:"11px", color:"#A8AECB", textAlign:"right", marginTop:"3px", marginRight:"4px" }}>
+                                  {msg.seen
+                                    ? `Seen ${formatRelativeTime(msg.seenAt || msg.createdAt)}`
+                                    : `Sent ${formatRelativeTime(msg.createdAt)}`}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -1419,12 +2058,17 @@ export default function CounselorDashboard() {
             <div style={s.notifPanelHeader}>
               <div>
                 <div style={s.notifPanelTitle}>🔔 Notifications</div>
-                <div style={s.notifPanelSub}>{notifs.length} total · newest on top</div>
+                <div style={s.notifPanelSub}>{notifBadgeCount} total · newest on top</div>
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                {notifs.length > 0 && (
+                {notifBadgeCount > 0 && (
                   <button
-                    onClick={() => { setNotifs([]); setNotifFilter("all"); }}
+                    onClick={() => {
+                      const ids = [...dismissedNotifIds, ...liveAllNotifs.map(n => n.id)];
+                      setDismissedNotifIds(new Set(ids));
+                      localStorage.setItem("dismissedNotifIds", JSON.stringify(ids));
+                      setNotifFilter("all");
+                    }}
                     style={{ ...s.notifClose, width: "auto", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", fontFamily: "'Poppins',sans-serif" }}
                   >
                     Clear all
@@ -1437,9 +2081,12 @@ export default function CounselorDashboard() {
             {/* ── Filter pills ── */}
             <div style={s.notifFilterBar}>
               {[
-                { key: "all",      label: "All"         },
-                { key: "upcoming", label: "⚡ Upcoming" },
-                { key: "done",     label: "✅ Done"     },
+                { key: "all",       label: "All"          },
+                { key: "messages",  label: "💬 Messages"  },
+                { key: "upcoming",  label: "⚡ Upcoming"  },
+                { key: "missed",    label: "⏰ Missed"    },
+                { key: "cancelled", label: "🚫 Cancelled" },
+                { key: "done",      label: "✅ Done"      },
               ].map(f => (
                 <button
                   key={f.key}
@@ -1456,102 +2103,25 @@ export default function CounselorDashboard() {
 
             <div style={s.notifList}>
               {(() => {
-                const getUrgency = n => {
-                  const now = new Date(), apptTime = new Date(n.appt.scheduleDate);
-                  const diffMin = Math.round((apptTime - now) / 60000);
-                  const sameDay = apptTime.toDateString() === now.toDateString();
-                  if (n.appt.status === "DONE")              return "done";
-                  if (n.appt.status === "ONGOING")           return "ongoing";
-                  if (diffMin < 0 && sameDay)                return "overdue";
-                  if (diffMin >= 0 && diffMin <= 15)         return "now";
-                  if (diffMin > 15 && diffMin <= 60)         return "soon";
-                  return "scheduled";
-                };
-
-                const filtered = notifs.filter(n => {
-                  if (notifFilter === "all")      return true;
-                  if (notifFilter === "new")      return n.type === "new";
-                  if (notifFilter === "upcoming") return n.type === "soon" || n.type === "now";
-                  if (notifFilter === "done")     return n.type === "done" || n.type === "ongoing";
-                  return true;
-                });
+                // Upcoming/Done are comprehensive lists (every pending or
+                // finished appointment), not dismissable alerts, so they
+                // ignore dismissedNotifIds and never show a ✕.
+                let filtered, dismissible;
+                if (notifFilter === "upcoming")      { filtered = liveUpcomingNotifs; dismissible = false; }
+                else if (notifFilter === "done")     { filtered = liveDoneNotifs;     dismissible = false; }
+                else if (notifFilter === "messages") { filtered = liveChatNotifs.filter(n => !dismissedNotifIds.has(n.id));      dismissible = true; }
+                else if (notifFilter === "missed")   { filtered = liveMissedNotifs.filter(n => !dismissedNotifIds.has(n.id));    dismissible = true; }
+                else if (notifFilter === "cancelled"){ filtered = liveCancelledNotifs.filter(n => !dismissedNotifIds.has(n.id)); dismissible = true; }
+                else                                 { filtered = liveAllNotifs; dismissible = true; }
 
                 if (filtered.length === 0) return (
                   <div style={s.notifEmpty}>
-                    <span style={{ fontSize: "36px" }}>{notifs.length === 0 ? "🔔" : "🔍"}</span>
-                    <p style={s.notifEmptyText}>{notifs.length === 0 ? "No notifications yet" : "Nothing here"}</p>
+                    <span style={{ fontSize: "36px" }}>{notifBadgeCount === 0 ? "🔔" : "🔍"}</span>
+                    <p style={s.notifEmptyText}>{notifBadgeCount === 0 ? "No notifications yet" : "Nothing here"}</p>
                   </div>
                 );
 
-                return filtered.map(n => {
-                // Compute live urgency from current time
-                const now      = new Date();
-                const apptTime = new Date(n.appt.scheduleDate);
-                const diffMin  = Math.round((apptTime - now) / 60000);
-                const sameDay  = apptTime.toDateString() === now.toDateString();
-
-                const urgency = n.type === "done"    ? "done"
-                  : n.type === "ongoing"             ? "ongoing"
-                  : n.appt.status === "DONE"         ? "done"
-                  : n.appt.status === "ONGOING"      ? "ongoing"
-                  : diffMin < 0 && sameDay           ? "overdue"
-                  : diffMin >= 0 && diffMin <= 15    ? "now"
-                  : diffMin > 15 && diffMin <= 60    ? "soon"
-                  : "scheduled";
-
-                const meta = {
-                  done:      { color: "#38C9B8", bg: "#E6FAF7", icon: "✅", label: "Session done" },
-                  ongoing:   { color: "#5B6BD8", bg: "#EEF0FD", icon: "🔄", label: "Session ongoing" },
-                  overdue:   { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: `Overdue ${Math.abs(diffMin)}m ago` },
-                  now:       { color: "#F87171", bg: "#FFF0EE", icon: "🔴", label: diffMin <= 0 ? "Starting NOW" : `In ${diffMin} min` },
-                  soon:      { color: "#F9A72B", bg: "#FFF8EC", icon: "⚡", label: `In ${diffMin} min` },
-                  scheduled: { color: "#5B6BD8", bg: "#EEF0FD", icon: "📅", label: apptTime.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) },
-                }[urgency];
-
-                // Relative time since the notification was added
-                const secAgo = Math.floor((now - new Date(n.addedAt)) / 1000);
-                const relAge = secAgo < 60 ? "just now"
-                  : secAgo < 3600 ? `${Math.floor(secAgo / 60)}m ago`
-                  : secAgo < 86400 ? `${Math.floor(secAgo / 3600)}h ago`
-                  : new Date(n.addedAt).toLocaleDateString();
-
-                return (
-                  <div key={n.id} style={{ ...s.notifItem, borderLeft: `4px solid ${meta.color}` }}>
-                    <div style={s.notifItemTop}>
-                      <span style={s.notifItemName}>{n.name}</span>
-                      <span style={{ ...s.notifItemTag, background: meta.bg, color: meta.color }}>
-                        {meta.icon} {meta.label}
-                      </span>
-                    </div>
-                    <div style={s.notifItemMeta}>
-                      <span style={{ ...s.notifItemSev, color: SEV_COLOR[n.appt.severity] }}>
-                        {n.appt.severity}
-                      </span>
-                      <span style={s.notifItemTime}>{relAge}</span>
-                    </div>
-                    <div style={s.notifItemActions}>
-                      <button
-                        onClick={() => { setNotifOpen(false); setTab("schedule"); }}
-                        style={s.notifActionBtn}
-                      >
-                        View Schedule →
-                      </button>
-                      <button
-                        onClick={() => {
-                          const st = students.find(s => String(s._id) === String(
-                            typeof n.appt.studentId === "object" ? n.appt.studentId._id : n.appt.studentId
-                          ));
-                          if (st) openChat(st);
-                          setNotifOpen(false);
-                        }}
-                        style={{ ...s.notifActionBtn, background: "#EEF0FD", color: "#5B6BD8" }}
-                      >
-                        💬 Chat
-                      </button>
-                    </div>
-                  </div>
-                );
-                }); // end filtered.map
+                return filtered.map(n => renderNotifCard(n, { dismissible }));
               })(/* end IIFE */)}
             </div>
           </div>
@@ -1582,6 +2152,60 @@ const s = {
     fontFamily: "'Lato',sans-serif",
     background: "#F0F2F8",
     overflow: "hidden",
+  },
+  toastWrap: {
+    position: "fixed",
+    top: "20px",
+    right: "20px",
+    zIndex: 2000,
+    width: "340px",
+  },
+  toast: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    background: "#2D3047",
+    color: "#fff",
+    padding: "14px 16px",
+    borderRadius: "14px",
+    boxShadow: "0 12px 32px rgba(0,0,0,0.28)",
+    cursor: "pointer",
+  },
+  toastText: {
+    fontSize: "13px",
+    fontWeight: 600,
+    fontFamily: "'Poppins',sans-serif",
+    lineHeight: 1.4,
+  },
+  toastClose: {
+    background: "rgba(255,255,255,0.12)",
+    border: "none",
+    color: "#fff",
+    width: "22px",
+    height: "22px",
+    borderRadius: "50%",
+    fontSize: "11px",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  toastCard: {
+    position: "relative",
+    cursor: "pointer",
+    boxShadow: "0 12px 32px rgba(0,0,0,0.28)",
+    borderRadius: "12px",
+  },
+  toastCardClose: {
+    position: "absolute",
+    top: "8px",
+    right: "8px",
+    background: "rgba(45,48,71,0.08)",
+    border: "none",
+    color: "#7B7F9E",
+    width: "20px",
+    height: "20px",
+    borderRadius: "50%",
+    fontSize: "10px",
+    cursor: "pointer",
   },
   loadingScreen: {
     display: "flex", flexDirection: "column", alignItems: "center",
@@ -2035,6 +2659,32 @@ const s = {
     fontFamily: "'Poppins',sans-serif",
   },
 
+  /* ── Overview date filter ── */
+  ovFilterBar: {
+    display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+    marginBottom: "16px",
+  },
+  ovFilterModeGroup: {
+    display: "flex", gap: "4px",
+    background: "#F3F4F8", borderRadius: "10px", padding: "3px",
+  },
+  ovFilterModeBtn: {
+    padding: "6px 14px",
+    background: "transparent", color: "#7B7F9E", border: "none", borderRadius: "8px",
+    fontSize: "12px", fontWeight: "600", cursor: "pointer",
+    fontFamily: "'Poppins',sans-serif", transition: "all 0.15s",
+  },
+  ovFilterModeBtnActive: {
+    background: "#fff", color: "#5B6BD8",
+    boxShadow: "0 2px 6px rgba(91,107,216,0.18)",
+  },
+  ovFilterInput: {
+    padding: "6px 12px",
+    border: "1.5px solid #E5E7EB", borderRadius: "8px",
+    fontSize: "12px", fontWeight: "600", color: "#2D3047",
+    fontFamily: "'Poppins',sans-serif", background: "#fff",
+  },
+
   /* ── Overview mini-calendar ── */
   ovNavBtn: {
     width: "30px", height: "30px",
@@ -2058,7 +2708,7 @@ const s = {
     boxShadow: "0 2px 8px rgba(91,107,216,0.25)",
   },
   ovCalRow: {
-    display: "flex", borderBottom: "1px solid #F0F2F8", minWidth: "500px",
+    display: "flex", borderBottom: "1px solid #F0F2F8", minWidth: "600px",
   },
   ovTimeCol: {
     width: "68px", flexShrink: 0,
@@ -2084,7 +2734,7 @@ const s = {
     fontSize: "10px", fontWeight: "600",
     fontFamily: "'Poppins',sans-serif",
     borderBottom: "1px solid #F0F2F8",
-    minWidth: "500px",
+    minWidth: "600px",
   },
   ovChip: {
     width: "100%", padding: "4px 6px",
@@ -2245,18 +2895,21 @@ const s = {
   msMyBubble: {
     background: "linear-gradient(135deg,#5B6BD8,#7C6FCD)",
     color: "#fff", padding: "10px 14px",
-    borderRadius: "18px 18px 4px 18px",
-    maxWidth: "70%", boxShadow: "0 2px 10px rgba(91,107,216,0.3)",
+    borderRadius: "20px",
+    boxShadow: "0 2px 10px rgba(91,107,216,0.3)",
   },
   msTheirBubble: {
     background: "#fff", color: "#2D3047",
     padding: "10px 14px",
     borderRadius: "18px 18px 18px 4px",
-    maxWidth: "70%", boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
   },
   msMsgText: {
     display: "block", fontSize: "14px",
     lineHeight: 1.6, fontFamily: "'Lato',sans-serif",
+    // Without this, a long unbroken string (no spaces) overflows past the
+    // bubble instead of wrapping onto the next line.
+    overflowWrap: "break-word", wordBreak: "break-word", whiteSpace: "pre-wrap",
   },
   msMsgMeta: {
     display: "flex", justifyContent: "flex-end",
@@ -2380,9 +3033,17 @@ const s = {
   notifItem: {
     background: "#fff",
     borderRadius: "12px",
-    padding: "14px 14px 14px 16px",
+    padding: "14px 30px 14px 16px",
     boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
     borderLeft: "4px solid #5B6BD8",
+    position: "relative",
+  },
+  notifItemDismiss: {
+    position: "absolute", top: "10px", right: "10px",
+    width: "20px", height: "20px", borderRadius: "50%",
+    border: "none", background: "#F0F2F8", color: "#7B7F9E",
+    fontSize: "11px", lineHeight: "20px", padding: 0,
+    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
   },
   notifItemTop: {
     display: "flex", alignItems: "center",

@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "e277f4e1-7b01-46eb-81dc-723780cea8ee"
+      }
+    },
+    "android": {
+      "package": "com.danice_cabual.hearmeoutfrontend"
+    }
+  }
+}
