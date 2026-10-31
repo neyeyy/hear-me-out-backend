@@ -2103,7 +2103,11 @@ const s = {
   /* ── Chat tab — inline messenger ── */
   messengerWrap: {
     display: "flex", gap: 0,
-    height: "100vh",
+    // 100% (not 100vh) so this fills exactly its parent's actual height —
+    // 100vh ignores the parent and measures the raw viewport, which was
+    // taller than the real available space and forced an extra scrollbar
+    // that exposed a sliver of the page's background at the edge.
+    height: "100%",
     background: "#fff",
     borderRadius: "16px",
     boxShadow: "0 2px 14px rgba(0,0,0,0.06)",
