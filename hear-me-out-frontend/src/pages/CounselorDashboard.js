@@ -2152,7 +2152,14 @@ const s = {
   /* layout */
   layout: {
     display: "flex",
-    height: "100vh",
+    // Pinned to the viewport instead of sized with height:100vh in normal
+    // flow — #root's min-height:100% and this 100vh can disagree by a
+    // sub-pixel, which made the page itself a hair taller than the
+    // viewport and triggered a page-level scrollbar that exposed bare
+    // white at the edge (this dashboard never scrolls at the page level;
+    // each panel scrolls internally instead).
+    position: "fixed",
+    inset: 0,
     fontFamily: "'Lato',sans-serif",
     background: "#F0F2F8",
     overflow: "hidden",
