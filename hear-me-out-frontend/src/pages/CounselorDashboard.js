@@ -1422,7 +1422,7 @@ export default function CounselorDashboard() {
                     {low} of {total} students in healthy range · {high > 0 ? `${high} need immediate attention` : "no urgent cases"}
                   </p>
                 </div>
-                <div style={{ display:"flex", gap:"24px" }}>
+                <div style={{ display:"flex", flexWrap:"wrap", rowGap:"14px", gap:"24px" }}>
                   {[
                     { label:"Students",    value: total },
                     { label:"Sessions",    value: Object.keys(appointments).length },
