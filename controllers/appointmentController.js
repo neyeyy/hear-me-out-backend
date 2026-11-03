@@ -48,13 +48,16 @@ function skipToWeekday(date) {
   return d;
 }
 
-// How many students already have an active appointment on this calendar day?
+// How many students are already counted against this calendar day's cap?
+// Counts every status except CANCELLED — a MISSED appointment still used up
+// one of that day's 4 slots, so it must keep counting against the cap
+// instead of quietly freeing up room for another booking.
 async function countActiveApptsOnDay(date, excludeApptId) {
   const dayStart = new Date(date); dayStart.setHours(0, 0, 0, 0);
   const dayEnd   = new Date(date); dayEnd.setHours(23, 59, 59, 999);
   const query = {
     scheduleDate: { $gte: dayStart, $lte: dayEnd },
-    status: { $in: ['PENDING', 'ONGOING'] },
+    status: { $ne: 'CANCELLED' },
   };
   if (excludeApptId) query._id = { $ne: excludeApptId };
   return Appointment.countDocuments(query);
@@ -197,11 +200,18 @@ exports.getAvailableSlots = async (req, res) => {
     const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
     const dayEnd   = new Date(day); dayEnd.setHours(23, 59, 59, 999);
 
+    // Overlap detection only cares about slots someone is actually still
+    // coming to; the day cap counts everyone scheduled that day except
+    // CANCELLED, so a MISSED appointment still counts against the limit.
     const existing = await Appointment.find({
       scheduleDate: { $gte: dayStart, $lte: dayEnd },
       status: { $in: ["PENDING", "ONGOING"] },
     });
-    const dayFull = existing.length >= MAX_APPTS_PER_DAY;
+    const dayCount = await Appointment.countDocuments({
+      scheduleDate: { $gte: dayStart, $lte: dayEnd },
+      status: { $ne: "CANCELLED" },
+    });
+    const dayFull = dayCount >= MAX_APPTS_PER_DAY;
 
     const now = new Date();
     const slots = TIME_SLOTS.map(sl => {
