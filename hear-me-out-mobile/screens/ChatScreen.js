@@ -273,6 +273,7 @@ export default function ChatScreen({ navigation }) {
   };
 
   const renderMessage = ({ item, index }) => {
+    const isSystem = item.senderId === "system";
     const isMe = String(item.senderId) === String(userId);
     const isLast = index === messages.length - 1;
     const action = getSystemAction(item);
@@ -290,6 +291,7 @@ export default function ChatScreen({ navigation }) {
             </View>
           )}
           <View style={{ alignItems: isMe ? "flex-end" : "flex-start" }}>
+            {isSystem && <Text style={styles.chatbotLabel}>🤖 Chatbot</Text>}
             <View style={isMe ? styles.myBubble : styles.theirBubble}>
               <Text style={isMe ? styles.myBubbleText : styles.theirBubbleText}>
                 {item.message}
@@ -627,6 +629,7 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 4 },
   timeText: { fontSize: 9, opacity: 0.65, color: "inherit" },
   statusText: { fontSize: 11, color: "#9CA3AF", textAlign: "right", marginTop: 3, marginRight: 4 },
+  chatbotLabel: { fontSize: 11, fontWeight: "700", color: "#A8AECB", marginLeft: 4, marginBottom: 3 },
   typingRow: {
     flexDirection: "row", alignItems: "center",
     gap: 6, paddingHorizontal: 14, paddingBottom: 6,

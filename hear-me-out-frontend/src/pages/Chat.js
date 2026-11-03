@@ -300,6 +300,7 @@ function Chat() {
       )}
 
       {messages.map((msg, i) => {
+        const isSystem  = msg.senderId === "system";
         const isMe      = String(msg.senderId) === String(userId);
         const isLast    = i === messages.length - 1;
         const action    = isStudent ? getSystemAction(msg) : null;
@@ -314,6 +315,11 @@ function Chat() {
               marginBottom: "6px",
             }}
           >
+            {isSystem && (
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "#A8AECB", margin: "0 4px 3px" }}>
+                🤖 Chatbot
+              </span>
+            )}
             <div style={{ display: "flex", alignItems: "flex-end", gap: "8px" }}>
               {!isMe && (
                 <div style={s.msgAvatar}>
